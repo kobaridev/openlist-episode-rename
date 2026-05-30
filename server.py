@@ -1,4 +1,5 @@
 import os
+import html
 from fastapi import FastAPI, HTTPException, Body
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -214,7 +215,11 @@ def batch_rename(req: RenameRequest):
     if not renamer_instance:
         raise HTTPException(status_code=401, detail="请先登录")
     
-    rename_mapping = {item.path: item.new_name for item in req.renames}
+    rename_mapping = {}
+    for item in req.renames:
+        src_name = html.unescape(item.path)
+        new_name = html.unescape(item.new_name)
+        rename_mapping[src_name] = new_name
     success = renamer_instance.batch_rename(req.dir_path, rename_mapping)
     if success:
         return {"status": "success", "message": "批量重命名完成"}
@@ -230,7 +235,9 @@ def rename_single(req: RenameSingleRequest):
     if not renamer_instance:
         raise HTTPException(status_code=401, detail="请先登录")
     
-    success = renamer_instance.rename_single_item(req.path, req.new_name)
+    path = html.unescape(req.path)
+    new_name = html.unescape(req.new_name)
+    success = renamer_instance.rename_single_item(path, new_name)
     if success:
         return {"status": "success", "message": "重命名成功"}
     else:

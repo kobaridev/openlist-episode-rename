@@ -585,6 +585,8 @@ class InteractiveEpisodeRenamer:
         
         # 如果没有匹配到模式，返回基本文件名信息
         name, ext = os.path.splitext(filename)
+        # 清理文件名中的特殊字符
+        name = re.sub(r'[<>:"/\\|?*\[\]"\'""'']', '_', name)
         return {
             'title': name,
             'season': '1',
@@ -605,10 +607,10 @@ class InteractiveEpisodeRenamer:
             title = episode_info.get('title', 'Unknown').strip()
             episode_title = episode_info.get('episode_title', '').strip()
             
-            # 清理标题中的特殊字符
-            title = re.sub(r'[<>:"/\\|?*]', '_', title)
+            # 清理标题中的特殊字符：Windows非法字符 + 引号 + 方括号
+            title = re.sub(r'[<>:"/\\|?*\[\]"\'""'']', '_', title)
             if episode_title:
-                episode_title = re.sub(r'[<>:"/\\|?*]', '_', episode_title)
+                episode_title = re.sub(r'[<>:"/\\|?*\[\]"\'""'']', '_', episode_title)
             
             # 支持动态集名拼接
             format_dict = {

@@ -490,11 +490,17 @@
                         const res = await axios.post('/api/tmdb_fetch', { url });
                         const episodes = res.data.episodes;
                         let matchedCount = 0;
+                        const cleanSpecialChars = (str) => {
+                            if (!str) return str;
+                            return str.replace(/[\u201C\u201D\u2018\u2019\u0022\u0027]/g, '')
+                                      .replace(/[\[\]]/g, '')
+                                      .replace(/[<>:|?*]/g, '');
+                        };
                         filesTable.value.forEach(row => {
                             const ep = parseInt(row.info.episode || '0').toString();
-                            row.info.title = seriesTitle;
+                            row.info.title = cleanSpecialChars(seriesTitle);
                             if (episodes[ep]) {
-                                row.info.episode_title = episodes[ep];
+                                row.info.episode_title = cleanSpecialChars(episodes[ep]);
                                 matchedCount++;
                             }
                             updateSingleName(row);
@@ -524,23 +530,40 @@
                 };
 
                 const updateSingleName = (row) => {
+                    if (!row.info) row.info = {};
                     let parts = [];
-                    if (row.info.title) parts.push(row.info.title.replace(/\s+/g, '.'));
+                    if (row.info.title) {
+                        const cleanTitle = String(row.info.title)
+                            .replace(/[\u201C\u201D\u2018\u2019\u0022\u0027]/g, '')
+                            .replace(/[\[\]]/g, '')
+                            .replace(/[<>:|?*]/g, '');
+                        parts.push(cleanTitle.replace(/\s+/g, '.'));
+                    }
                     
                     let se = '';
                     if (row.info.season) se += `S${String(row.info.season).padStart(2, '0')}`;
                     if (row.info.episode) se += `E${String(row.info.episode).padStart(2, '0')}`;
                     if (se) parts.push(se);
                     
-                    if (row.info.episode_title) parts.push(row.info.episode_title.replace(/\s+/g, '.'));
+                    if (row.info.episode_title) {
+                        const cleanTitle = String(row.info.episode_title)
+                            .replace(/[\u201C\u201D\u2018\u2019\u0022\u0027]/g, '')
+                            .replace(/[\[\]]/g, '')
+                            .replace(/[<>:|?*]/g, '');
+                        parts.push(cleanTitle.replace(/\s+/g, '.'));
+                    }
                     
-                    if (row.info.tags && row.info.tags.length > 0) {
+                    if (row.info.tags && Array.isArray(row.info.tags) && row.info.tags.length > 0) {
                         parts.push(...row.info.tags.map(t => typeof t === 'string' ? t.replace(/\s+/g, '.') : t));
                     }
                     
                     let name = parts.filter(Boolean).join('.');
                     // 确保不会有双点，且头尾不带点
                     name = name.replace(/\.+/g, '.').replace(/^\./, '').replace(/\.$/, '');
+                    // 清理特殊字符
+                    name = name.replace(/[\u201C\u201D\u2018\u2019\u0022\u0027]/g, '')
+                               .replace(/[\[\]]/g, '')
+                               .replace(/[<>:|?*]/g, '');
                     row.newName = name ? (name + row.ext) : row.original;
                 };
 
@@ -558,7 +581,7 @@
                             inputErrorMessage: '目录名不能为空'
                         });
                         const fullPath = currentPath.value === '/' ? '/' + row.name : currentPath.value + '/' + row.name;
-                        await axios.post('/api/rename_single', { path: fullPath, new_name: value });
+                        await axios.post('/api/rename_single', { path: fullPath, new_name: sanitizeFilename(value) });
                         ElementPlus.ElMessage.success('目录重命名成功');
                         loadPath(currentPath.value);
                     } catch (e) {
@@ -568,11 +591,23 @@
                     }
                 };
 
+                const sanitizeFilename = (name) => {
+                    if (!name) return name;
+                    const textarea = document.createElement('textarea');
+                    textarea.innerHTML = name;
+                    const decoded = textarea.value;
+                    return decoded
+                        .replace(/[\u201C\u201D\u2018\u2019\u0022\u0027]/g, '')
+                        .replace(/[\[\]]/g, '')
+                        .replace(/[<>:|?*]/g, '')
+                        .replace(/\//g, '-')
+                        .replace(/\\/g, '-');
+                };
+                
                 const doBatchRename = async () => {
-                    // Fix: send strictly native original filename for src_name, not absolute paths
                     const renames = filesTable.value.filter(r => r.newName && r.newName !== r.original).map(r => ({
-                        path: r.original,
-                        new_name: r.newName
+                        path: r.original,  // 原文件名必须保持原样
+                        new_name: sanitizeFilename(r.newName)  // 新文件名需要清理特殊字符
                     }));
                     if(renames.length === 0) return;
                     try {
