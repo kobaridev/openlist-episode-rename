@@ -1,5 +1,8 @@
 import os
+import sys
 import html
+import webbrowser
+import threading
 from fastapi import FastAPI, HTTPException, Body
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -9,6 +12,11 @@ from typing import List, Dict, Optional
 import uvicorn
 
 from core import InteractiveEpisodeRenamer
+
+def resource_path(relative_path):
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
 
 app = FastAPI(title="Episode Renamer Web UI")
 
@@ -246,8 +254,12 @@ def rename_single(req: RenameSingleRequest):
 # 挂载前端页面
 @app.get("/")
 def index():
-    return FileResponse("frontend/index.html")
+    return FileResponse(resource_path("frontend/index.html"))
+
+def open_browser():
+    webbrowser.open_new("http://127.0.0.1:8000")
 
 if __name__ == "__main__":
     print("启动服务器: http://127.0.0.1:8000")
-    uvicorn.run("server:app", host="127.0.0.1", port=8000, reload=True)
+    threading.Timer(1.5, open_browser).start()
+    uvicorn.run(app, host="127.0.0.1", port=8000, reload=False)
