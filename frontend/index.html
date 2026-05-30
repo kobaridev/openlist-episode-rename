@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenList 交互式剧集重命名 (Web UI)</title>
+    <!-- Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- Element Plus -->
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+    <script src="https://unpkg.com/element-plus"></script>
+    <script src="https://unpkg.com/@element-plus/icons-vue"></script>
+    <!-- Axios -->
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <style>
+        :root {
+            --el-color-primary: #ff758c;
+            --el-color-primary-light-3: #ff9eb0;
+            --el-color-success: #ff7eb3;
+            --el-border-radius-base: 16px;
+            --el-border-radius-small: 12px;
+            --bg-gradient: linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%);
+            --bg-color: #fff0f5;
+            --bg-dots: rgba(255, 117, 140, 0.45);
+            --text-color: #444;
+            --glass-bg: rgba(255, 255, 255, 0.65);
+            --glass-border: rgba(255, 192, 203, 0.5);
+            --glass-shadow: rgba(255, 117, 140, 0.1);
+            --header-gradient: linear-gradient(135deg, #ff758c 0%, #ff7eb3 100%);
+            --header-shadow: rgba(255, 117, 140, 0.3);
+            --tmdb-bg: rgba(255, 117, 140, 0.05);
+            --tmdb-border: #ffb6c1;
+            --batch-bg: rgba(255, 240, 245, 0.5);
+            --batch-border: rgba(255, 182, 193, 0.4);
+            --result-card-bg: rgba(255, 255, 255, 0.75);
+            --result-card-border: #fbc2eb;
+            --table-bg: rgba(255, 255, 255, 0.5);
+            --sidebar-bg: rgba(255, 255, 255, 0.65);
+            --card-header-color: #ff758c;
+            --breadcrumb-color: #ff7eb3;
+        }
+        [data-theme="dark"] {
+            --bg-gradient: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            --bg-color: #1a1a2e;
+            --bg-dots: rgba(255, 117, 140, 0.45);
+            --text-color: #e0e0e0;
+            --glass-bg: rgba(30, 30, 50, 0.65);
+            --glass-border: rgba(255, 117, 140, 0.3);
+            --glass-shadow: rgba(0, 0, 0, 0.3);
+            --header-gradient: linear-gradient(135deg, #c0392b 0%, #8e44ad 100%);
+            --header-shadow: rgba(0, 0, 0, 0.4);
+            --tmdb-bg: rgba(255, 117, 140, 0.08);
+            --tmdb-border: rgba(255, 117, 140, 0.3);
+            --batch-bg: rgba(40, 30, 40, 0.5);
+            --batch-border: rgba(255, 117, 140, 0.25);
+            --result-card-bg: rgba(40, 35, 50, 0.75);
+            --result-card-border: rgba(255, 117, 140, 0.3);
+            --table-bg: rgba(30, 30, 50, 0.5);
+            --sidebar-bg: rgba(30, 30, 50, 0.65);
+            --card-header-color: #ff9eb0;
+            --breadcrumb-color: #ff9eb0;
+        }
+        [data-theme="dark"] .el-table { --el-table-bg-color: transparent; --el-table-tr-bg-color: transparent; --el-table-header-bg-color: rgba(40,35,50,0.8); --el-table-border-color: rgba(255,255,255,0.08); --el-table-text-color: #e0e0e0; --el-table-header-text-color: #ff9eb0; }
+        [data-theme="dark"] .el-table__body tr:hover > td { background-color: rgba(255,117,140,0.1) !important; }
+        [data-theme="dark"] .el-input__wrapper { background-color: rgba(40,35,50,0.8); box-shadow: 0 0 0 1px rgba(255,255,255,0.15) inset; }
+        [data-theme="dark"] .el-input__inner { color: #e0e0e0; }
+        [data-theme="dark"] .el-select-dropdown { background-color: #2a2a3e; }
+        [data-theme="dark"] .el-select-dropdown__item { color: #e0e0e0; }
+        [data-theme="dark"] .el-select-dropdown__item.hover, [data-theme="dark"] .el-select-dropdown__item:hover { background-color: rgba(255,117,140,0.2); }
+        [data-theme="dark"] .el-popper.is-light { background: #2a2a3e; border-color: rgba(255,255,255,0.1); color: #e0e0e0; }
+        [data-theme="dark"] .el-card { background-color: transparent; }
+        [data-theme="dark"] .el-form-item__label { color: #e0e0e0; }
+        [data-theme="dark"] .el-breadcrumb__inner { color: #e0e0e0; }
+        [data-theme="dark"] .el-breadcrumb__inner.is-link { color: #ff9eb0; }
+        
+        body { 
+            margin: 0; padding: 0; 
+            font-family: ui-rounded, 'Hiragino Maru Gothic ProN', 'Quicksand', 'Comfortaa', 'Microsoft YaHei', sans-serif; 
+            font-size: 16px; 
+            color: var(--text-color);
+            transition: all 0.4s ease;
+            min-height: 100vh;
+        }
+        #app { 
+            display: flex; flex-direction: column; height: 100vh;
+            background-color: var(--bg-color);
+            background-image: radial-gradient(circle at 50% 50%, var(--bg-dots) 2px, transparent 2px);
+            background-size: 32px 32px;
+            transition: all 0.4s ease;
+        }
+        .header { 
+            background: var(--header-gradient);
+            color: white; padding: 0 30px; line-height: 70px; font-size: 26px; font-weight: bold; 
+            box-shadow: 0 4px 15px var(--header-shadow); letter-spacing: 1px;
+            display: flex; justify-content: space-between; align-items: center; transition: background 0.4s ease;
+        }
+        .header-actions { display: flex; gap: 12px; align-items: center; }
+        .theme-btn, .logout-btn {
+            background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white;
+            padding: 8px 16px; border-radius: 20px; cursor: pointer; font-size: 15px;
+            transition: all 0.3s ease; display: flex; align-items: center; gap: 6px;
+        }
+        .theme-btn:hover, .logout-btn:hover { background: rgba(255,255,255,0.35); transform: translateY(-1px); }
+        .main-container { flex: 1; display: flex; overflow: hidden; padding: 15px; gap: 15px; background: rgba(255,255,255,0.08); border-top: 1px solid rgba(255,255,255,0.15); transition: all 0.4s ease; }
+        [data-theme="dark"] .main-container { background: rgba(255,255,255,0.03); border-top: 1px solid rgba(255,255,255,0.05); }
+        .glass-card {
+            background: var(--glass-bg) !important; backdrop-filter: blur(14px);
+            border: 2px solid var(--glass-border) !important; border-radius: 20px !important;
+            box-shadow: 0 8px 25px var(--glass-shadow) !important; transition: background 0.4s ease;
+        }
+        .sidebar { width: 350px; background: var(--sidebar-bg); backdrop-filter: blur(14px); padding: 20px; border-radius: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); overflow-y: auto; transition: background 0.4s ease; }
+        .content { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+        .breadcrumb-wrapper { margin-bottom: 20px; font-size: 20px; font-weight: bold; }
+        .breadcrumb-wrapper .el-breadcrumb__item { font-size: 20px; font-weight: bold; }
+        .breadcrumb-wrapper .el-breadcrumb__inner.is-link { font-weight: 800; color: var(--breadcrumb-color); }
+        .card-header { display: flex; justify-content: space-between; align-items: center; font-size: 18px; color: var(--card-header-color); font-weight: bold; }
+        .pointer { cursor: pointer; color: var(--card-header-color); font-weight: bold; }
+        .pointer:hover { text-decoration: underline; color: #ff7eb3; }
+        .el-input__inner, .el-select-dropdown__item, .el-table { font-size: 15px !important; }
+        .el-button { font-size: 15px !important; border-radius: 12px !important; letter-spacing: 1px; }
+        .el-form-item__label { font-size: 16px !important; font-weight: bold; }
+        .el-input__wrapper, .el-select__wrapper { border-radius: 12px !important; }
+        .tmdb-box {
+            display: flex; gap: 10px; margin-bottom: 15px; background: var(--tmdb-bg); 
+            padding: 15px; border-radius: 15px; border: 1px dashed var(--tmdb-border); align-items: center; flex-wrap: wrap; transition: background 0.4s ease;
+        }
+        .tmdb-title { font-weight: bold; color: #ff758c; font-size: 16px; display: flex; align-items: center; gap: 5px; min-width: max-content; }
+        [data-theme="dark"] .tmdb-title { color: #ff9eb0; }
+        
+        .tmdb-result-list { display: flex; flex-wrap: wrap; gap: 10px; width: 100%; margin-top: 10px; }
+        .tmdb-result-card {
+            border: 2px solid var(--result-card-border); border-radius: 12px; padding: 10px 15px; cursor: pointer;
+            background: var(--result-card-bg); transition: all 0.3s ease; text-align: center; color: var(--text-color);
+        }
+        .tmdb-result-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(255,117,140,0.2); }
+        .tmdb-result-card.active { background: #ff758c; color: #fff; border-color: #ff758c; }
+        .tmdb-res-title { font-weight: bold; font-size: 15px; margin-bottom: 5px; }
+        .tmdb-res-date { font-size: 12px; opacity: 0.9; }
+        
+        .batch-box {
+            display: flex; gap: 10px; align-items: center; background: var(--batch-bg);
+            padding: 8px 15px; border-radius: 12px; border: 1px dashed var(--batch-border); flex-wrap: wrap; transition: background 0.4s ease;
+        }
+        .batch-box-label { font-weight: bold; color: var(--card-header-color); white-space: nowrap; }
+        
+        .rename-dir-btn { cursor: pointer; color: #ff758c; margin-left: 8px; font-size: 13px; opacity: 0.7; transition: all 0.2s ease; }
+        .rename-dir-btn:hover { opacity: 1; transform: scale(1.15); }
+        [data-theme="dark"] .rename-dir-btn { color: #ff9eb0; }
+        
+        .el-message-box { background: var(--glass-bg) !important; backdrop-filter: blur(14px); }
+        [data-theme="dark"] .el-message-box__title { color: #e0e0e0; }
+        [data-theme="dark"] .el-message-box__message { color: #ccc; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="header">
+            <span>OpenList 剧集重命名魔法屋</span>
+            <div class="header-actions">
+                <button class="theme-btn" @click="toggleTheme">
+                    <span v-if="isDarkMode">☀️ 浅色</span>
+                    <span v-else>🌙 深色</span>
+                </button>
+                <button v-if="isLoggedIn" class="logout-btn" @click="doLogout">🚪 退出登录</button>
+            </div>
+        </div>
+        
+        <div class="main-container" v-if="!isLoggedIn">
+            <div style="margin: 80px auto; width: 700px;">
+                <el-card class="glass-card" style="padding: 10px;">
+                    <template #header>
+                        <div class="card-header"><span style="font-size: 28px; font-weight: bold; width: 100%; text-align: center;">连接 OpenList 服务</span></div>
+                    </template>
+                    <el-form label-width="100px" style="margin-top: 20px;">
+                        <el-form-item label="服务地址">
+                            <el-input v-model="loginForm.url" placeholder="http://127.0.0.1:5244" size="large"></el-input>
+                        </el-form-item>
+                        <el-form-item label="用户名">
+                            <el-input v-model="loginForm.username" size="large"></el-input>
+                        </el-form-item>
+                        <el-form-item label="密码">
+                            <el-input v-model="loginForm.password" type="password" @keyup.enter="doLogin" size="large"></el-input>
+                        </el-form-item>
+                        <el-form-item>
+                            <el-button type="primary" @click="doLogin" :loading="loading" style="width: 100%; font-size: 20px; height: 52px; margin-top: 15px;">立即登录</el-button>
+                        </el-form-item>
+                    </el-form>
+                </el-card>
+            </div>
+        </div>
+
+        <div class="main-container" v-else>
+            <div class="sidebar glass-card">
+                <div class="breadcrumb-wrapper">
+                    <el-breadcrumb separator="/">
+                        <el-breadcrumb-item href="#" @click.prevent="loadPath('/')">根目录</el-breadcrumb-item>
+                        <el-breadcrumb-item v-for="(part, index) in pathParts" :key="index" 
+                            href="#" @click.prevent="loadPath(buildPath(index))">
+                            {{ part }}
+                        </el-breadcrumb-item>
+                    </el-breadcrumb>
+                </div>
+                
+                <el-table :data="sidebarItems" style="width: 100%; font-size: 15px;" @row-click="handleSidebarClick" v-loading="loading" :show-header="false">
+                    <el-table-column prop="name">
+                        <template #default="scope">
+                            <div style="display:flex; align-items:center; justify-content:space-between; width:100%;">
+                                <div style="display:flex; align-items:center; overflow:hidden;">
+                                    <svg v-if="scope.row.is_dir" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#409eff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                                    <svg v-else xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#909399" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                                    <span :class="{ pointer: scope.row.is_dir }" style="margin-left: 8px; line-height: 1.5; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ scope.row.name }}</span>
+                                </div>
+                                <el-button v-if="scope.row.is_dir" @click.stop="renameDirectory(scope.row)" size="small" link type="primary" style="flex-shrink:0; margin-left:8px;">重命名</el-button>
+                            </div>
+                        </template>
+                    </el-table-column>
+                </el-table>
+            </div>
+            
+            <div class="content">
+                <el-card class="glass-card" shadow="never" style="flex: 1; display:flex; flex-direction:column; padding-bottom:0; min-height: 0;">
+                    <template #header>
+                        <div class="card-header">
+                            <span>当前目录：{{ currentPath }}</span>
+                            <div>
+                                <el-button type="success" @click="doBatchRename" :disabled="!hasChanges">提交重命名</el-button>
+                            </div>
+                        </div>
+                    </template>
+                    
+                    <div style="flex:1; display:flex; flex-direction:column; height: 100%; overflow: hidden;">
+                        
+                        <div class="tmdb-box" style="margin-bottom: 15px;">
+                            <span class="tmdb-title">TMDB 剧集搜索：</span>
+                            <el-input v-model="tmdbSearchKeyword" placeholder="输入剧集名称..." style="width: 220px;" @keyup.enter="searchTMDB"></el-input>
+                            <el-button @click="searchTMDB" :loading="tmdbSearching">搜索</el-button>
+                            
+                            <div style="display:flex; gap:8px; align-items:center; margin-left: 15px; padding-left: 15px; border-left: 1px dashed var(--tmdb-border);">
+                                <span class="batch-box-label">一键递增:</span>
+                                <span style="font-size:14px;">季(S):</span>
+                                <el-input-number v-model="batchSeason" :min="0" :max="100" style="width:85px" controls-position="right" size="small"></el-input-number>
+                                <span style="font-size:14px;">首集(E):</span>
+                                <el-input-number v-model="batchEpisode" :min="0" :max="999" style="width:85px" controls-position="right" size="small"></el-input-number>
+                                <el-button @click="applyBatchSeasonEpisode" type="primary" plain size="small">应用到列表</el-button>
+                            </div>
+                            
+                            <div v-if="tmdbSearchResults.length > 0" class="tmdb-result-list">
+                                <div v-for="item in tmdbSearchResults" :key="item.id" 
+                                     class="tmdb-result-card" 
+                                     :class="{ active: tmdbSelectedSeries === item.id }"
+                                     @click="tmdbSelectedSeries = item.id">
+                                     <div class="tmdb-res-title">{{ item.title }}</div>
+                                     <div class="tmdb-res-date">{{ item.date }}</div>
+                                </div>
+                            </div>
+                            
+                            <div v-if="tmdbSearchResults.length > 0" style="width: 100%; display:flex; align-items:center; gap:10px; margin-top: 10px; border-top: 1px dashed var(--tmdb-border); padding-top: 10px;">
+                                <span style="color: var(--card-header-color); font-weight: bold;">将选中剧集的剧名及分集名应用到上方所选的 第 {{ batchSeason }} 季</span>
+                                <el-button type="warning" @click="fetchTMDBFromSelection" :loading="tmdbLoading" :disabled="!tmdbSelectedSeries">自动抓取并匹配</el-button>
+                            </div>
+                        </div>
+                        
+                        <div class="batch-box" style="margin-bottom: 15px;">
+                            <span class="batch-box-label">批量附加参数:</span>
+                            <el-select v-model="batchTags" multiple filterable allow-create default-first-option placeholder="输入参数回车添加" style="width: 280px;" size="small">
+                                <el-option v-for="item in ['1080p','2160p','WEB-DL','BluRay','HDR','DV','Atmos']" :key="item" :label="item" :value="item"></el-option>
+                            </el-select>
+                            <el-button @click="applyBatchTags" type="primary" plain size="small">应用到列表</el-button>
+                        </div>
+
+                        <el-table :data="filesTable" style="width: 100%; border-radius: 12px; overflow: hidden; flex: 1;" height="100%" size="default">
+                            <el-table-column prop="original" label="原文件名" min-width="120" show-overflow-tooltip fixed="left"></el-table-column>
+                            
+                            <el-table-column label="剧集名 (Title)" width="130" fixed="left">
+                                <template #default="scope">
+                                    <el-input v-model="scope.row.info.title" placeholder="请搜索TMDB或手动输入" @input="updateSingleName(scope.row)"></el-input>
+                                </template>
+                            </el-table-column>
+                            
+                            <el-table-column label="各集标题" width="130">
+                                <template #default="scope">
+                                    <el-input v-model="scope.row.info.episode_title" placeholder="如: 试播集" @input="updateSingleName(scope.row)"></el-input>
+                                </template>
+                            </el-table-column>
+                            
+                            <el-table-column label="附加参数 (标签)" min-width="250">
+                                <template #default="scope">
+                                    <el-select v-model="scope.row.info.tags" multiple filterable allow-create default-first-option placeholder="输入参数后按回车添加" @change="updateSingleName(scope.row)" style="width: 100%;">
+                                        <el-option v-for="item in ['1080p','2160p','WEB-DL','BluRay','HDR','DV','Atmos']" :key="item" :label="item" :value="item"></el-option>
+                                    </el-select>
+                                </template>
+                            </el-table-column>
+                            
+                            <el-table-column label="季(S)" width="65" fixed="right">
+                                <template #default="scope">
+                                    <el-input v-model="scope.row.info.season" @input="updateSingleName(scope.row)"></el-input>
+                                </template>
+                            </el-table-column>
+                            
+                            <el-table-column label="集(E)" width="65" fixed="right">
+                                <template #default="scope">
+                                    <el-input v-model="scope.row.info.episode" @input="updateSingleName(scope.row)"></el-input>
+                                </template>
+                            </el-table-column>
+                            
+                            <el-table-column label="新文件名" min-width="210" fixed="right">
+                                <template #default="scope">
+                                    <el-input v-model="scope.row.newName" style="width: calc(100% - 25px); margin-right: 5px;"></el-input>
+                                    <span v-if="scope.row.original !== scope.row.newName && scope.row.newName" style="color: #ff758c; font-weight: bold; font-size: 20px;">*</span>
+                                </template>
+                            </el-table-column>
+                        </el-table>
+                    </div>
+                </el-card>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, computed, watch, onMounted } = Vue;
+        
+        const app = createApp({
+            setup() {
+                const isLoggedIn = ref(false);
+                const loading = ref(false);
+                const loginForm = ref({ url: 'http://127.0.0.1:5244', username: 'admin', password: '' });
+                
+                const isDarkMode = ref(false);
+                
+                const currentPath = ref('/');
+                const directories = ref([]);
+                const filesList = ref([]);
+                
+                // TV Data
+                const filesTable = ref([]);
+                const batchSeason = ref(1);
+                const batchEpisode = ref(1);
+                const batchTags = ref([]);
+                
+                const tmdbSearchKeyword = ref('');
+                const tmdbSearching = ref(false);
+                const tmdbSearchResults = ref([]);
+                const tmdbSelectedSeries = ref('');
+                const tmdbLoading = ref(false);
+                
+                const videoExtensions = ['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.mpg', '.mpeg', '.ts', '.m2ts', '.vob', '.iso'];
+
+                onMounted(() => {
+                    const savedTheme = localStorage.getItem('renamer_theme');
+                    if (savedTheme === 'dark') {
+                        isDarkMode.value = true;
+                        document.documentElement.setAttribute('data-theme', 'dark');
+                    }
+                    const savedAuth = localStorage.getItem('renamer_auth');
+                    if (savedAuth) {
+                        try {
+                            const parsed = JSON.parse(savedAuth);
+                            loginForm.value = parsed;
+                            doLogin();
+                        } catch(e) {}
+                    }
+                });
+
+                const toggleTheme = () => {
+                    isDarkMode.value = !isDarkMode.value;
+                    const theme = isDarkMode.value ? 'dark' : 'light';
+                    document.documentElement.setAttribute('data-theme', theme);
+                    localStorage.setItem('renamer_theme', theme);
+                };
+
+                const doLogout = () => {
+                    localStorage.removeItem('renamer_auth');
+                    isLoggedIn.value = false;
+                    currentPath.value = '/';
+                    directories.value = [];
+                    filesList.value = [];
+                    filesTable.value = [];
+                    ElementPlus.ElMessage.success('已退出登录');
+                };
+
+                const pathParts = computed(() => currentPath.value.split('/').filter(p => p !== ''));
+                
+                const naturalSortAsc = (a, b) => {
+                    const numA = parseInt(a.name.match(/\d+/)) || 0;
+                    const numB = parseInt(b.name.match(/\d+/)) || 0;
+                    if (numA !== numB) return numA - numB;
+                    return a.name.localeCompare(b.name, 'zh-CN');
+                };
+                
+                const sidebarItems = computed(() => {
+                    const dirs = [...directories.value].map(d => ({ ...d, is_dir: true })).sort(naturalSortAsc);
+                    const fs = [...filesList.value].map(f => ({ ...f, is_dir: false })).sort(naturalSortAsc);
+                    return [...dirs, ...fs];
+                });
+
+                const buildPath = (index) => '/' + pathParts.value.slice(0, index + 1).join('/');
+
+                const doLogin = async () => {
+                    loading.value = true;
+                    try {
+                        await axios.post('/api/login', loginForm.value);
+                        localStorage.setItem('renamer_auth', JSON.stringify(loginForm.value));
+                        isLoggedIn.value = true;
+                        loadPath('/');
+                    } catch (e) {
+                        ElementPlus.ElMessage.error(e.response?.data?.detail || '登录失败');
+                        localStorage.removeItem('renamer_auth');
+                        isLoggedIn.value = false;
+                    } finally {
+                        loading.value = false;
+                    }
+                };
+
+                const loadPath = async (path) => {
+                    loading.value = true;
+                    try {
+                        const res = await axios.post('/api/list', { path });
+                        currentPath.value = res.data.current_path;
+                        directories.value = res.data.directories;
+                        filesList.value = res.data.files;
+                        
+                        const videos = res.data.files.filter(f => videoExtensions.includes(f.name.substring(f.name.lastIndexOf('.')).toLowerCase())).sort((a, b) => {
+                                const numA = parseInt(a.name.match(/\d+/)) || 0;
+                                const numB = parseInt(b.name.match(/\d+/)) || 0;
+                                if (numA !== numB) return numA - numB;
+                                return a.name.localeCompare(b.name, 'zh-CN');
+                            });
+                        
+                        if (videos.length > 0) {
+                            const filenames = videos.map(v => v.name);
+                            const infoRes = await axios.post('/api/extract_info', { filenames });
+                            
+                            filesTable.value = videos.map(v => {
+                                const row = {
+                                    original: v.name,
+                                    info: { 
+                                        ...infoRes.data[v.name], 
+                                        title: '', 
+                                        tags: [], 
+                                        episode_title: '' 
+                                    },
+                                    newName: '',
+                                    ext: v.name.substring(v.name.lastIndexOf('.'))
+                                };
+                                updateSingleName(row);
+                                return row;
+                            });
+                        } else {
+                            filesTable.value = [];
+                        }
+                    } catch (e) {
+                        ElementPlus.ElMessage.error('加载目录失败');
+                    } finally {
+                        loading.value = false;
+                    }
+                };
+
+                const handleSidebarClick = (row) => {
+                    if (!row.is_dir) return; 
+                    loadPath(currentPath.value === '/' ? '/' + row.name : currentPath.value + '/' + row.name);
+                };
+
+                const searchTMDB = async () => {
+                    if (!tmdbSearchKeyword.value) { ElementPlus.ElMessage.warning('请输入搜索名称'); return; }
+                    tmdbSearching.value = true;
+                    try {
+                        const res = await axios.post('/api/tmdb_search', { keyword: tmdbSearchKeyword.value });
+                        tmdbSearchResults.value = res.data.results;
+                        if (tmdbSearchResults.value.length > 0) {
+                            tmdbSelectedSeries.value = tmdbSearchResults.value[0].id;
+                        } else {
+                            ElementPlus.ElMessage.warning('未搜索到相关剧集');
+                        }
+                    } catch(e) {
+                        ElementPlus.ElMessage.error(e.response?.data?.detail || '搜索TMDB失败');
+                    } finally {
+                        tmdbSearching.value = false;
+                    }
+                };
+
+                const fetchTMDBFromSelection = async () => {
+                    if (!tmdbSelectedSeries.value) return;
+                    const url = `https://www.themoviedb.org/tv/${tmdbSelectedSeries.value}/season/${batchSeason.value}`;
+                    
+                    const seriesObj = tmdbSearchResults.value.find(i => i.id === tmdbSelectedSeries.value);
+                    let seriesTitle = seriesObj ? seriesObj.title : '';
+
+                    tmdbLoading.value = true;
+                    try {
+                        const res = await axios.post('/api/tmdb_fetch', { url });
+                        const episodes = res.data.episodes;
+                        let matchedCount = 0;
+                        filesTable.value.forEach(row => {
+                            const ep = parseInt(row.info.episode || '0').toString();
+                            row.info.title = seriesTitle;
+                            if (episodes[ep]) {
+                                row.info.episode_title = episodes[ep];
+                                matchedCount++;
+                            }
+                            updateSingleName(row);
+                        });
+                        if (matchedCount > 0) ElementPlus.ElMessage.success(`成功为 ${matchedCount} 集匹配记录！`);
+                        else ElementPlus.ElMessage.warning('更新了剧名，但无匹配的集数标题');
+                    } catch(e) {
+                        ElementPlus.ElMessage.error(e.response?.data?.detail || '抓取 TMDB 失败');
+                    } finally {
+                        tmdbLoading.value = false;
+                    }
+                };
+
+                const applyBatchSeasonEpisode = () => {
+                    filesTable.value.forEach((row, index) => {
+                        row.info.season = String(batchSeason.value);
+                        row.info.episode = String(batchEpisode.value + index);
+                        updateSingleName(row);
+                    });
+                };
+
+                const applyBatchTags = () => {
+                    filesTable.value.forEach(row => {
+                        row.info.tags = [...batchTags.value];
+                        updateSingleName(row);
+                    });
+                };
+
+                const updateSingleName = (row) => {
+                    let parts = [];
+                    if (row.info.title) parts.push(row.info.title.replace(/\s+/g, '.'));
+                    
+                    let se = '';
+                    if (row.info.season) se += `S${String(row.info.season).padStart(2, '0')}`;
+                    if (row.info.episode) se += `E${String(row.info.episode).padStart(2, '0')}`;
+                    if (se) parts.push(se);
+                    
+                    if (row.info.episode_title) parts.push(row.info.episode_title.replace(/\s+/g, '.'));
+                    
+                    if (row.info.tags && row.info.tags.length > 0) {
+                        parts.push(...row.info.tags.map(t => typeof t === 'string' ? t.replace(/\s+/g, '.') : t));
+                    }
+                    
+                    let name = parts.filter(Boolean).join('.');
+                    // 确保不会有双点，且头尾不带点
+                    name = name.replace(/\.+/g, '.').replace(/^\./, '').replace(/\.$/, '');
+                    row.newName = name ? (name + row.ext) : row.original;
+                };
+
+                const hasChanges = computed(() => {
+                    return filesTable.value.some(r => r.newName && r.newName !== r.original);
+                });
+
+                const renameDirectory = async (row) => {
+                    try {
+                        const { value } = await ElementPlus.ElMessageBox.prompt('请输入新目录名', '重命名目录', {
+                            confirmButtonText: '确认',
+                            cancelButtonText: '取消',
+                            inputValue: row.name,
+                            inputPattern: /\S+/,
+                            inputErrorMessage: '目录名不能为空'
+                        });
+                        const fullPath = currentPath.value === '/' ? '/' + row.name : currentPath.value + '/' + row.name;
+                        await axios.post('/api/rename_single', { path: fullPath, new_name: value });
+                        ElementPlus.ElMessage.success('目录重命名成功');
+                        loadPath(currentPath.value);
+                    } catch (e) {
+                        if (e !== 'cancel' && e !== 'close') {
+                            ElementPlus.ElMessage.error(e.response?.data?.detail || '重命名失败');
+                        }
+                    }
+                };
+
+                const doBatchRename = async () => {
+                    // Fix: send strictly native original filename for src_name, not absolute paths
+                    const renames = filesTable.value.filter(r => r.newName && r.newName !== r.original).map(r => ({
+                        path: r.original,
+                        new_name: r.newName
+                    }));
+                    if(renames.length === 0) return;
+                    try {
+                        await axios.post('/api/rename', { dir_path: currentPath.value, renames });
+                        ElementPlus.ElMessage.success('重命名成功');
+                        loadPath(currentPath.value);
+                    } catch(e) {
+                        ElementPlus.ElMessage.error(e.response?.data?.detail || '重命名失败');
+                    }
+                };
+
+                return {
+                    isLoggedIn, loading, loginForm, doLogin,
+                    isDarkMode, toggleTheme, doLogout,
+                    currentPath, directories, filesList, sidebarItems, pathParts, buildPath, loadPath, handleSidebarClick,
+                    filesTable, batchSeason, batchEpisode, batchTags, 
+                    applyBatchSeasonEpisode, applyBatchTags, updateSingleName,
+                    tmdbSearchKeyword, tmdbSearching, tmdbSearchResults, tmdbSelectedSeries, tmdbLoading, searchTMDB, fetchTMDBFromSelection,
+                    hasChanges, doBatchRename, renameDirectory
+                };
+            }
+        });
+        app.use(ElementPlus);
+        app.mount('#app');
+    </script>
+</body>
+</html>
+
