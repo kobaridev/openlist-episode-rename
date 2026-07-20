@@ -344,6 +344,8 @@
                 const tmdbLoading = ref(false);
                 
                 const videoExtensions = ['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.mpg', '.mpeg', '.ts', '.m2ts', '.vob', '.iso'];
+                const subtitleExtensions = ['.ass', '.srt', '.sup', '.ssa', '.sub', '.vtt'];
+                const mediaExtensions = [...videoExtensions, ...subtitleExtensions];
 
                 onMounted(() => {
                     const savedTheme = localStorage.getItem('renamer_theme');
@@ -419,7 +421,7 @@
                         directories.value = res.data.directories;
                         filesList.value = res.data.files;
                         
-                        const videos = res.data.files.filter(f => videoExtensions.includes(f.name.substring(f.name.lastIndexOf('.')).toLowerCase())).sort((a, b) => {
+                        const videos = res.data.files.filter(f => mediaExtensions.includes(f.name.substring(f.name.lastIndexOf('.')).toLowerCase())).sort((a, b) => {
                                 const numA = parseInt(a.name.match(/\d+/)) || 0;
                                 const numB = parseInt(b.name.match(/\d+/)) || 0;
                                 if (numA !== numB) return numA - numB;
@@ -515,9 +517,44 @@
                 };
 
                 const applyBatchSeasonEpisode = () => {
-                    filesTable.value.forEach((row, index) => {
+                    // 将视频文件和字幕文件区分开：字幕文件跟随同集视频的集数
+                    const videoRows = [];
+                    const subtitleRows = [];
+                    filesTable.value.forEach(row => {
+                        const ext = row.ext.toLowerCase();
+                        if (subtitleExtensions.includes(ext)) {
+                            subtitleRows.push(row);
+                        } else {
+                            videoRows.push(row);
+                        }
+                    });
+
+                    // 视频文件按顺序递增集数
+                    videoRows.forEach((row, index) => {
                         row.info.season = String(batchSeason.value);
                         row.info.episode = String(batchEpisode.value + index);
+                        updateSingleName(row);
+                    });
+
+                    // 字幕文件：尝试通过原文件名中的集数匹配对应视频，若无法匹配则按顺序递增
+                    subtitleRows.forEach((row, index) => {
+                        row.info.season = String(batchSeason.value);
+                        // 尝试从原文件名提取集数来匹配
+                        const origEpMatch = row.original.match(/[Ee][Pp]?(\d+)|第(\d+)[集话話]|(\d+)\./);
+                        const origEpNum = origEpMatch ? parseInt(origEpMatch[1] || origEpMatch[2] || origEpMatch[3]) : null;
+                        // 查找有相同原始集数的视频文件
+                        const matchedVideo = origEpNum !== null ? videoRows.find(v => {
+                            const vMatch = v.original.match(/[Ee][Pp]?(\d+)|第(\d+)[集话話]|(\d+)\./);
+                            const vNum = vMatch ? parseInt(vMatch[1] || vMatch[2] || vMatch[3]) : null;
+                            return vNum === origEpNum;
+                        }) : null;
+
+                        if (matchedVideo) {
+                            row.info.episode = matchedVideo.info.episode;
+                        } else {
+                            // 无法匹配时按字幕文件自身顺序递增
+                            row.info.episode = String(batchEpisode.value + index);
+                        }
                         updateSingleName(row);
                     });
                 };

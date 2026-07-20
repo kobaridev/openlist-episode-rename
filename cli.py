@@ -636,21 +636,23 @@ class InteractiveEpisodeRenamer:
             self.console.print("[yellow]当前目录没有文件[/yellow]")
             return
         
-        # 过滤视频文件
+        # 过滤视频和字幕文件
         video_extensions = {'.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.mpg', '.mpeg', '.ts', '.m2ts', '.vob', '.iso'}
+        subtitle_extensions = {'.ass', '.srt', '.sup', '.ssa', '.sub', '.vtt'}
+        media_extensions = video_extensions | subtitle_extensions
         video_files = []
-        
+
         for file in files:
             filename = file.get('name', '')
             ext = os.path.splitext(filename)[1].lower()
-            if ext in video_extensions:
+            if ext in media_extensions:
                 video_files.append(file)
-        
+
         if not video_files:
-            self.console.print("[yellow]当前目录没有视频文件[/yellow]")
+            self.console.print("[yellow]当前目录没有视频或字幕文件[/yellow]")
             return
         
-        self.console.print(f"[cyan]找到 {len(video_files)} 个视频文件:[/cyan]")
+        self.console.print(f"[cyan]找到 {len(video_files)} 个媒体文件（视频+字幕）:[/cyan]")
         for i, file in enumerate(video_files, 1):
             self.console.print(f"  [bold]{i}.[/bold] {file['name']}")
         
@@ -839,21 +841,72 @@ class InteractiveEpisodeRenamer:
         
         # 创建重命名映射
         rename_mapping = {}
-        current_episode = int(start_episode)
-        
+        subtitle_extensions = {'.ass', '.srt', '.sup', '.ssa', '.sub', '.vtt'}
+
+        # 分离视频文件和字幕文件
+        pure_video_files = []
+        pure_subtitle_files = []
         for file in video_files:
+            ext = os.path.splitext(file['name'])[1].lower()
+            if ext in subtitle_extensions:
+                pure_subtitle_files.append(file)
+            else:
+                pure_video_files.append(file)
+
+        # 视频文件按顺序递增集数
+        current_episode = int(start_episode)
+        video_episode_map = {}  # 原文件名基底 -> 集数 的映射
+        for file in pure_video_files:
             old_name = file['name']
             ext = os.path.splitext(old_name)[1]
-            
-            # 生成新文件名
+            base_name = os.path.splitext(old_name)[0]
+
             new_name = naming_pattern.format(
                 season=season.zfill(2),
                 episode=current_episode,
                 title=show_name
             ) + ext
-            
+
             rename_mapping[old_name] = new_name
-            current_episode += 1  # 递增集数
+            video_episode_map[base_name] = current_episode
+            current_episode += 1
+
+        # 字幕文件：匹配对应视频的集数
+        sub_episode = int(start_episode)
+        for file in pure_subtitle_files:
+            old_name = file['name']
+            ext = os.path.splitext(old_name)[1]
+            base_name = os.path.splitext(old_name)[0]
+
+            # 尝试在视频文件中找到同名基底的匹配
+            matched_episode = video_episode_map.get(base_name)
+            if matched_episode is None:
+                # 尝试通过提取集数来匹配
+                import re
+                ep_match = re.search(r'[Ee][Pp]?(\d+)|第(\d+)[集话話]|(\d+)', base_name)
+                if ep_match:
+                    orig_ep = int(ep_match.group(1) or ep_match.group(2) or ep_match.group(3))
+                    for vbase, vep in video_episode_map.items():
+                        v_match = re.search(r'[Ee][Pp]?(\d+)|第(\d+)[集话話]|(\d+)', vbase)
+                        if v_match:
+                            v_orig_ep = int(v_match.group(1) or v_match.group(2) or v_match.group(3))
+                            if v_orig_ep == orig_ep:
+                                matched_episode = vep
+                                break
+
+            if matched_episode is not None:
+                ep = matched_episode
+            else:
+                ep = sub_episode
+                sub_episode += 1
+
+            new_name = naming_pattern.format(
+                season=season.zfill(2),
+                episode=ep,
+                title=show_name
+            ) + ext
+
+            rename_mapping[old_name] = new_name
         
         # 显示重命名计划
         self.console.print("\n[yellow]重命名计划:[/yellow]")
