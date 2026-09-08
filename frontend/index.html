@@ -292,6 +292,33 @@
         .btn-up:disabled { opacity: .45; cursor: not-allowed; }
         .tool-item { display: inline-flex; align-items: center; gap: 6px; }
         .tool-label { font-size: 14px; color: var(--text-2); white-space: nowrap; }
+        .tag-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+        .param-input {
+            height: 44px; width: 290px; display: flex; align-items: center; gap: 6px;
+            padding: 4px 10px; border-radius: 11px; box-sizing: border-box;
+            background: var(--input-bg); border: 1px solid var(--border-strong);
+            overflow-x: auto; font-size: 15px;
+        }
+        .param-input input {
+            flex: 1; min-width: 80px; height: 100%; border: none; outline: none;
+            background: transparent; font-size: 15px; color: var(--text-1);
+        }
+        .param-input input::placeholder { color: var(--text-3); font-size: 15px; }
+        .param-chip {
+            display: inline-flex; align-items: center; padding: 0 8px; height: 26px;
+            border-radius: 7px; background: var(--tag-bg); color: var(--accent);
+            font-size: 15px; white-space: nowrap; flex-shrink: 0;
+        }
+        .param-x { cursor: pointer; opacity: .7; margin-left: 5px; font-size: 13px; font-weight: 400; }
+        .param-x:hover { opacity: 1; }
+        .el-input-number .el-input-number__decrease,
+        .el-input-number .el-input-number__increase {
+            background: transparent; color: var(--text-2); border: none;
+        }
+        .el-input-number .el-input-number__decrease:not(.is-disabled):hover,
+        .el-input-number .el-input-number__increase:not(.is-disabled):hover {
+            background: var(--tag-bg); color: var(--accent);
+        }
         .tool-divider { width: 1px; height: 26px; background: var(--border-strong); opacity: .5; flex-shrink: 0; }
         .tmdb-poster-ph { width: 60px; height: 88px; border-radius: 8px; background: var(--tag-bg); flex-shrink: 0; }
         .footer-bar { display: flex; align-items: center; gap: 14px; padding: 14px 20px; }
@@ -412,20 +439,16 @@
                         <button class="btn-ghost" :disabled="tmdb.searching" @click="tmdbSearch">
                             {{ tmdb.searching ? '搜索中…' : '🔍 搜索' }}
                         </button>
+                        <button v-if="tmdb.selected" class="btn-ghost" :disabled="tmdb.fetching" @click="tmdbFetch">
+                            {{ tmdb.fetching ? '获取中…' : '⚡ 获取集名' }}
+                        </button>
                         <span class="tool-item"><span class="tool-label">季</span>
                             <el-input-number v-model="tmdb.season" :min="1" :max="99" size="default" style="width:90px"></el-input-number>
                         </span>
                         <span class="tool-item"><span class="tool-label">起始集号</span>
                             <el-input-number v-model="epStart" :min="1" size="default" style="width:100px"></el-input-number>
                         </span>
-                        <button v-if="tmdb.selected" class="btn-ghost" :disabled="tmdb.fetching" @click="tmdbFetch">
-                            {{ tmdb.fetching ? '获取中…' : '⚡ 获取集名' }}
-                        </button>
                         <button class="btn-ghost" @click="applyEpisodeNumbers">应用</button>
-                        <span class="tool-item"><span class="tool-label">含集名</span>
-                            <el-checkbox v-model="useTitle"></el-checkbox>
-                        </span>
-                        <button class="btn-ghost" @click="reload(true)">↻ 刷新</button>
                     </div>
                     <div v-if="tmdb.results.length" class="tmdb-results">
                         <div v-for="r in tmdb.results" :key="r.id" class="tmdb-card"
@@ -451,19 +474,24 @@
                     <span class="muted" style="margin-left:auto">长文件名自动换行完整展示</span>
                 </div>
                 <div class="tag-bar">
-                    <span class="tool-label">批量标签</span>
-                    <el-input v-model="batchTags" size="small" clearable placeholder="如 1080p,BluRay" style="width:220px"></el-input>
-                    <button class="btn-ghost" @click="applyTags">应用标签</button>
+                    <div class="param-input">
+                        <span v-for="(p,i) in mediaParams" :key="p + '-' + i" class="param-chip">
+                            {{ p }}<b class="param-x" title="移除" @click="mediaParams.splice(i,1)">✕</b>
+                        </span>
+                        <input type="text" v-model="paramDraft" placeholder="输入后按回车添加，如 1080p"
+                               @keydown.enter.prevent="addParam" @keydown.backspace.prevent="backspaceParam">
+                    </div>
+                    <button class="btn-ghost" @click="applyTags">应用参数</button>
                 </div>
                 <div class="table-wrap">
                     <table class="tbl">
                         <thead>
                             <tr>
                                 <th>原文件名</th>
-                                <th style="width:70px">S</th>
-                                <th style="width:70px">E</th>
+                                <th style="width:110px">Season</th>
+                                <th style="width:110px">Episode</th>
                                 <th style="width:150px">集名（可选）</th>
-                                <th class="tags">标签</th>
+                                <th class="tags">参数</th>
                                 <th>新文件名（预览）</th>
                             </tr>
                         </thead>
@@ -585,7 +613,19 @@ createApp({
         const rows = ref([]);
         const health = reactive({ logged_in: false, user: '', openlist_ok: false });
         const settings = reactive({ tmdb_api_key:'', delimiter:'.', use_episode_title:true, default_season:'1', default_episode_start:'1', theme:'light' });
-        const batchTags = ref('');
+        const mediaParams = ref([]);
+        const paramDraft = ref('');
+        async function addParam() {
+            const v = paramDraft.value.trim();
+            if (!v) return;
+            if (!mediaParams.value.includes(v)) mediaParams.value.push(v);
+            paramDraft.value = '';
+            await nextTick();
+        }
+        function backspaceParam() {
+            if (paramDraft.value) return;
+            if (mediaParams.value.length) mediaParams.value.pop();
+        }
         const epStart = ref(1);
         const useTitle = ref(true);
         const sidebarCol = ref(false);
@@ -804,10 +844,11 @@ createApp({
             ElMessage.success('已填充「' + tmdb.selected.name + '」共 ' + rows.value.length + ' 行，预览列已更新');
         }
         function applyTags() {
-            if (!batchTags.value.trim()) return;
-            for (const r of rows.value) r.tags = batchTags.value.trim();
+            const joined = mediaParams.value.join(',');
+            for (const r of rows.value) r.tags = joined;
             syncEpisodes();
-            ElMessage.success('标签已应用到 ' + rowsCount.value + ' 行');
+            if (mediaParams.value.length) ElMessage.success('参数已应用到 ' + rowsCount.value + ' 行');
+            else ElMessage.info('已清空文件列表参数');
         }
         function applyEpisodeNumbers() {
             if (!rows.value.length) { ElMessage.warning('当前没有可应用的文件'); return; }
@@ -967,13 +1008,13 @@ createApp({
 
         return {
             loggedIn, loading, committing, currentPath, directories, files, rows, health, settings,
-            batchTags, epStart, useTitle, sidebarCol, toolsOpen, loginForm, loggingIn, loginError, tmdb,
+            mediaParams, paramDraft, epStart, useTitle, sidebarCol, toolsOpen, loginForm, loggingIn, loginError, tmdb,
             settingsOpen, savingSet, setForm, renamingDir, newDirName,
             dirName, rowsCount, renameableCount, crumbPath,
             crumbs, mediaExt, previewName, humanSize,
             doLogin, logout, reload, buildRows, openDir, navigateTo, goUp, scrollToFile,
             renameDir, commitDirRename, cancelDirRename, commitRename,
-            normalizeNum, fillFromSelection, applyTags, applyEpisodeNumbers,
+            normalizeNum, fillFromSelection, addParam, backspaceParam, applyTags, applyEpisodeNumbers,
             tmdbSearch, tmdbFetch, openSettings, saveSettings, toggleTheme, checkHealth,
             Search
         };
