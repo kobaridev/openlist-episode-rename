@@ -323,7 +323,7 @@ if __name__ == "__main__":
     if auto_open:
         import threading, time, webbrowser
         def open_browser():
-            time.sleep(1.2)
+            time.sleep(0.5)
             try:
                 webbrowser.open(browser_url)
                 print(f"已自动打开浏览器: {browser_url}")
