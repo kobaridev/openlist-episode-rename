@@ -223,8 +223,8 @@ jobs:
     - name: Rename Windows executable
       if: matrix.platform == 'windows'
       run: |
-        mv dist/openlist-episode-renamer.exe "dist/openlist-episode-renamer-windows-${{ matrix.arch }}.exe"
-        ls -la dist/
+        Move-Item dist/openlist-episode-renamer.exe "dist/openlist-episode-renamer-windows-${{ matrix.arch }}.exe"
+        Get-ChildItem dist\ | Select-Object Name,Length
       shell: pwsh
 
     - name: Upload artifacts
