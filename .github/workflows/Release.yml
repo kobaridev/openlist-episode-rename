@@ -122,26 +122,31 @@ jobs:
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
-        python-version: [3.12]
         include:
           - runner: ubuntu-latest
+            python-version: "3.12"
             platform: linux
             arch: amd64
             appimage_arch: x86_64
           - runner: ubuntu-24.04-arm
+            python-version: "3.12"
             platform: linux
             arch: arm64
             appimage_arch: aarch64
           - runner: windows-latest
+            python-version: "3.12"
             platform: windows
             arch: amd64
           - runner: windows-11-arm
+            python-version: "3.12"
             platform: windows
             arch: arm64
           - runner: macos-latest
+            python-version: "3.12"
             platform: macos
             arch: arm64
           - runner: macos-15-intel
+            python-version: "3.12"
             platform: macos
             arch: x64
 
