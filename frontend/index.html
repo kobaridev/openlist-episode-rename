@@ -229,8 +229,11 @@
         .muted { font-size: 14px; color: var(--text-3); }
 
         /* ---------- TMDB 面板 ---------- */
-        .tmdb-search { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+        .tmdb-search { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; --el-input-height: 42px; }
         .tmdb-search .grow { flex: 1; min-width: 200px; }
+        .tmdb-search .el-input__wrapper,
+        .tmdb-search .el-input-number .el-input__wrapper { border-radius: 10px; min-height: 42px; }
+        .tmdb-search .btn-ghost { min-height: 42px; }
         .tmdb-results { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
         .tmdb-card {
             display: flex; align-items: flex-start; gap: 10px;
@@ -262,7 +265,7 @@
             font-size: 15px; background: var(--input-bg); color: var(--text); outline: none; transition: border .2s;
         }
         .tbl input:focus { border-color: var(--accent); }
-        .tbl .num { width: 58px !important; text-align: center; }
+        .tbl .num { width: 66px !important; text-align: center; }
         .tbl .tags { min-width: 130px; }
         .tbl td.ep-cell input { transition: border-color .2s, background .2s, color .2s; }
         .tbl td.ep-cell.filled input { border-color: var(--ok); background: rgba(33, 186, 114, 0.10); color: var(--ok); }
@@ -478,10 +481,10 @@
                             {{ tmdb.fetching ? '获取中…' : '⚡ 获取集名' }}
                         </button>
                         <span class="tool-item"><span class="tool-label">季</span>
-                            <el-input-number v-model="tmdb.season" :min="1" :max="99" size="default" style="width:90px"></el-input-number>
+                            <el-input-number :controls="false" v-model="tmdb.season" :min="1" :max="99" size="default" style="width:110px"></el-input-number>
                         </span>
                         <span class="tool-item"><span class="tool-label">起始集号</span>
-                            <el-input-number v-model="epStart" :min="1" size="default" style="width:100px"></el-input-number>
+                            <el-input-number :controls="false" v-model="epStart" :min="1" :max="999" size="default" style="width:110px"></el-input-number>
                         </span>
                         <button class="btn-ghost" @click="applyEpisodeNumbers">应用</button>
                     </div>
