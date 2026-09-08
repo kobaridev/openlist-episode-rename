@@ -164,6 +164,9 @@
         .login-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px var(--glow-btn-h); }
         .login-btn:disabled { opacity: .6; cursor: not-allowed; transform: none; }
         .login-error { margin-top: 14px; font-size: 15px; font-weight: 600; color: var(--err); min-height: 20px; }
+        .login-badges { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+        .login-badges img { height: 22px; border-radius: 6px; box-shadow: 0 2px 8px var(--glow-soft); transition: transform .2s; }
+        .login-badges a:hover img { transform: translateY(-2px); }
 
         /* ---------- 主布局 ---------- */
         .main-layout { display: flex; min-height: 100vh; gap: 18px; padding: 18px; }
@@ -401,6 +404,17 @@
                 </button>
                 <div class="login-error">{{ loginError }}</div>
                 <div class="login-hint">仅需 OpenList 的账号与密码即可连接，无需额外配置令牌。凭据只保存在本机浏览器（localStorage）。<br><b>若 OpenList 也跑在 Docker 里</b>，请用 <b>http://host.docker.internal:5244</b>（容器名无关）。</div>
+                <div class="login-badges">
+                    <a href="https://github.com/KoBariDev" target="_blank" rel="noopener">
+                        <img src="https://img.shields.io/badge/作者-KoBariDev-4b8fe0?logo=github" alt="作者" title="作者: github.com/KoBariDev">
+                    </a>
+                    <a href="https://hub.131714.xyz" target="_blank" rel="noopener">
+                        <img src="https://img.shields.io/badge/博客-hub.131714.xyz-6aa9ff" alt="博客" title="博客: hub.131714.xyz">
+                    </a>
+                    <a href="https://github.com/kobaridev/openlist-episode-renamer" target="_blank" rel="noopener">
+                        <img src="https://img.shields.io/badge/仓库-openlist--episode--renamer-21ba72?logo=github" alt="仓库" title="仓库: github.com/kobaridev/openlist-episode-renamer">
+                    </a>
+                </div>
             </el-form>
         </div>
     </div>
