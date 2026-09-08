@@ -1,7 +1,7 @@
 // 使用本地已构建的开发镜像；若镜像不存在会先按 Dockerfile.dev 构建
 {
   "name": "openlist-episode-rename-dev",
-  "image": "openlist-er-dev:latest",
+  "image": "openlist-episode-rename:dev",
   "dockerFile": "Dockerfile.dev",
   "context": "${workspaceFolder}",
   "containerEnv": {},
