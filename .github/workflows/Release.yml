@@ -117,10 +117,11 @@ jobs:
 
   # 三平台 多架构 构建可执行文件 + deb/AppImage/dmg
   build-executables:
-    needs: create-tag
+    needs: [check-changes, create-tag]
     if: needs.check-changes.outputs.should_create_tag == 'true'
     runs-on: ${{ matrix.runner }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - runner: ubuntu-latest
