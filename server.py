@@ -1,265 +1,321 @@
+"""
+OpenList 剧集重命名工具 - Web 服务
+
+FastAPI 后端：为前端 Web UI 提供 API，并托管静态页面。
+运行: python server.py
+"""
 import os
 import sys
-import html
-import webbrowser
-import threading
-from fastapi import FastAPI, HTTPException, Body
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Dict, Optional
-import uvicorn
+from typing import Dict, List, Any
+import re
+import requests
 
 from core import InteractiveEpisodeRenamer
 
-def resource_path(relative_path):
-    if hasattr(sys, '_MEIPASS'):
-        return os.path.join(sys._MEIPASS, relative_path)
-    return os.path.join(os.path.abspath("."), relative_path)
+# 前端目录
+FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'frontend')
 
-app = FastAPI(title="Episode Renamer Web UI")
+# 全局单例（单用户模式）
+renamer: InteractiveEpisodeRenamer | None = None
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app = FastAPI(title="OpenList 剧集重命名工具")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# 全局存储renamer实例，简单实现，多用户请使用session
-renamer_instance: Optional[InteractiveEpisodeRenamer] = None
 
-class LoginRequest(BaseModel):
-    url: str
+# ==================== 认证与配置 ====================
+
+class LoginReq(BaseModel):
+    base_url: str
     username: str
     password: str
 
-class PathRequest(BaseModel):
-    path: str
-
-class RenameItem(BaseModel):
-    path: str
-    new_name: str
-
-class RenameRequest(BaseModel):
-    dir_path: str
-    renames: List[RenameItem]
-
 @app.post("/api/login")
-def login(req: LoginRequest):
-    global renamer_instance
-    renamer_instance = InteractiveEpisodeRenamer(req.url, req.username, req.password)
-    success = renamer_instance.login()
-    if success:
-        return {"status": "success", "message": "登录成功"}
-    else:
-        raise HTTPException(status_code=401, detail="登录失败，请检查配置。")
+def api_login(req: LoginReq):
+    global renamer
+    try:
+        r = InteractiveEpisodeRenamer(req.base_url, req.username, req.password)
+        r.load_token()
+        if r.validate_current_user():
+            r.save_config(req.base_url)
+            renamer = r
+            return {"success": True, "message": f"以 {r.username} 身份连接成功"}
+        ok = r.login()
+        if ok:
+            r.save_config(req.base_url)
+            renamer = r
+            return {"success": True, "message": f"登录成功，欢迎 {r.username}"}
+        return {"success": False, "message": "登录失败，请检查账号密码"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
 
 @app.get("/api/config")
-def get_config():
-    # 尝试加载本地配置
-    temp_renamer = InteractiveEpisodeRenamer("", "", "")
-    config = temp_renamer.load_config()
-    return {"url": config.get('base_url', 'http://127.0.0.1:5244')}
+def api_get_config():
+    """获取 OpenList 连接 + 用户设置"""
+    if renamer:
+        base_url = renamer.base_url
+        settings = renamer.settings
+    else:
+        base_url = "http://127.0.0.1:5244"
+        settings = dict(InteractiveEpisodeRenamer.DEFAULT_SETTINGS)
+    return {"base_url": base_url, "settings": settings}
+
+@app.post("/api/logout")
+def api_logout():
+    """退出登录：清除当前会话"""
+    global renamer
+    renamer = None
+    return {"success": True, "message": "已退出登录"}
+
+@app.post("/api/config")
+def api_set_config(req: dict):
+    """保存用户设置（TMDB Key、分隔符等），持久化到 settings.json"""
+    if not renamer:
+        return JSONResponse({"success": False, "message": "尚未登录"}, status_code=400)
+    if "settings" in req and isinstance(req["settings"], dict):
+        data = req["settings"]
+    else:
+        data = req
+    settings = renamer.save_settings(data)
+    return {"success": True, "settings": settings}
+
+@app.get("/api/health")
+def api_health():
+    """健康检查：OpenList 可达性 + 当前登录状态"""
+    status = {"logged_in": bool(renamer), "openlist_ok": False, "user": None}
+    if renamer:
+        status["user"] = renamer.username
+        try:
+            ok = renamer.validate_current_user()
+            status["openlist_ok"] = ok
+            if not ok:
+                # token 过期则尝试重登
+                ok = renamer.login()
+                status["openlist_ok"] = ok
+        except Exception:
+            pass
+    return status
+
+
+# ==================== 目录与文件 ====================
 
 @app.post("/api/list")
-def list_directory(req: PathRequest):
-    if not renamer_instance:
-        raise HTTPException(status_code=401, detail="请先登录")
-    
-    contents = renamer_instance.get_directory_contents(req.path)
-    if contents is None:
-        raise HTTPException(status_code=400, detail="获取目录失败")
-    
-    dirs = [item for item in contents if item.get('is_dir')]
-    files = [item for item in contents if not item.get('is_dir')]
-    
-    return {
-        "current_path": req.path,
-        "directories": dirs,
-        "files": files
-    }
+def api_list(req: dict):
+    """列出指定路径下的文件与目录"""
+    if not renamer:
+        return JSONResponse({"error": "未登录"}, status_code=401)
+    path = req.get("path", "/")
+    try:
+        base = path.rstrip("/")
+        def enrich(items):
+            out = []
+            for it in items:
+                it = dict(it)
+                if not it.get("path"):
+                    it["path"] = (base + "/" + (it.get("name") or "")) if base else "/" + (it.get("name") or "")
+                out.append(it)
+            return out
+        dirs = enrich(renamer.list_directories(path))
+        files = enrich(renamer.list_files(path))
+        return {"directories": dirs, "files": files, "path": path}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.post("/api/extract_info")
-def extract_info(req: dict = Body(...)):
-    if not renamer_instance:
-        raise HTTPException(status_code=401, detail="请先登录")
-    
-    filenames = req.get("filenames", [])
-    result = {}
-    for fname in filenames:
-        info = renamer_instance.extract_episode_info(fname)
-        result[fname] = info
-    return result
+def api_extract_info(req: dict):
+    """批量从文件名提取剧集信息"""
+    if not renamer:
+        return JSONResponse({"error": "未登录"}, status_code=401)
+    names = req.get("filenames", [])
+    results = []
+    for name in names:
+        try:
+            info = renamer.extract_episode_info(name)
+            results.append({"filename": name, "valid": bool(info), "info": info})
+        except Exception as e:
+            results.append({"filename": name, "valid": False, "error": str(e)})
+    return {"results": results}
+
+
+# ==================== TMDB（API 优先，网页抓取兜底） ====================
+
+def _tmdb_headers():
+    return {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    }
 
 @app.post("/api/tmdb_search")
-def tmdb_search(req: dict = Body(...)):
-    keyword = req.get("keyword")
+def api_tmdb_search(req: dict):
+    """搜索 TMDB 剧集。配置了 API Key 走 REST API，否则网页抓取。"""
+    keyword = req.get("keyword", "").strip()
     if not keyword:
-        raise HTTPException(status_code=400, detail="请输入搜索关键词")
-        
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 Safari/537.36',
-    }
+        return JSONResponse({"error": "缺少 keyword"}, status_code=400)
+    api_key = (renamer.settings.get("tmdb_api_key", "") if renamer else "").strip()
+    if api_key:
+        try:
+            results = renamer.tmdb_api_search(keyword, api_key)
+            return {"results": results, "source": "api"}
+        except Exception as e:
+            return JSONResponse({"error": f"TMDB API 调用失败: {e}"}, status_code=502)
+    # 网页抓取兜底
     try:
-        import requests
         from bs4 import BeautifulSoup
-        
-        # 请求 TMDB 网页搜索
-        res = requests.get(f"https://www.themoviedb.org/search/tv?query={keyword}&language=zh-CN", headers=headers, timeout=10)
+        res = requests.get(
+            "https://www.themoviedb.org/search/tv",
+            params={"query": keyword, "language": "zh-CN"},
+            headers=_tmdb_headers(), timeout=15,
+        )
         res.raise_for_status()
         soup = BeautifulSoup(res.text, 'html.parser')
-        
         results = []
         seen = set()
-        
-        for a in soup.find_all('a', attrs={'data-media-type': 'tv'}):
-            href = a.get('href', '')
-            if '/tv/' in href:
-                tv_id = href.split('/tv/')[-1].split('?')[0].split('-')[0].strip('/')
-                if not tv_id or not tv_id.isdigit() or tv_id in seen:
-                    continue
-                    
-                title = None
-                date = ''
-                
-                wrapper = a.find_parent('div', class_='wrapper')
-                if wrapper:
-                    title_elem = wrapper.find('h2')
-                    if title_elem:
-                        title = title_elem.get_text(strip=True)
-                    
-                    wrapper_text = wrapper.get_text(separator='|', strip=True)
-                    for p in wrapper_text.split('|'):
-                        if '年' in p and '月' in p:
-                            date = p
-                            break
-                            
-                if not title:
-                     if a.get('title'):
-                         title = a.get('title')
-                     else:
-                         title_img = a.find('img')
-                         if title_img and title_img.get('alt'):
-                             title = title_img.get('alt')
-                
-                if title:
-                    seen.add(tv_id)
-                    results.append({"id": tv_id, "title": title, "date": date})
-                    
-        return {"results": results}
+        for card in soup.select('div[class*="media-card"]'):
+            link = card.select_one('a[href^="/tv/"]')
+            if not link:
+                continue
+            href = link.get("href", "")
+            m = href.split("/tv/")[-1].split("?")[0]
+            if not m:
+                continue
+            tmdb_id = m.split("-")[0]
+            if not tmdb_id.isdigit() or tmdb_id in seen:
+                continue
+            title_el = card.select_one("h2")
+            title = title_el.get_text(strip=True) if title_el else ""
+            if not title:
+                img = card.select_one("img[alt]")
+                title = img.get("alt", "") if img else ""
+            poster = ""
+            img_el = card.select_one("img[src], img[data-src]")
+            if img_el:
+                src = img_el.get("src") or img_el.get("data-src") or ""
+                if src.startswith("//"):
+                    src = "https:" + src
+                poster = src
+            overview_el = card.select_one("p")
+            overview = overview_el.get_text(strip=True)[:120] if overview_el else ""
+            year_el = card.select_one("span.release_date")
+            year = ""
+            if year_el:
+                m = re.search(r"(19|20)\d{2}", year_el.get_text())
+                year = m.group(0) if m else ""
+            seen.add(tmdb_id)
+            results.append({"id": int(tmdb_id), "name": title, "overview": overview, "year": year, "poster": poster})
+            if len(seen) >= 10:
+                break
+        return {"results": results, "source": "scrape"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"搜索TMDB失败: {str(e)}")
+        return JSONResponse({"error": f"TMDB 搜索失败: {e}"}, status_code=502)
 
 @app.post("/api/tmdb_fetch")
-def tmdb_fetch(req: dict = Body(...)):
-    url = req.get("url")
-    if not url:
-        raise HTTPException(status_code=400, detail="URL is required")
-    
-    # 确保追加中文语言参数
-    if '?' not in url:
-        url += '?language=zh-CN'
-    elif 'language' not in url:
-        url += '&language=zh-CN'
-        
-    # TMDB 请求伪装成正常浏览器
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 Safari/537.36',
-        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
-    }
+def api_tmdb_fetch(req: dict):
+    """获取季的分集名称。
+    方式 1（API）: {"series_id": 1396, "season": 1}  —— 需要 tmdb_api_key
+    方式 2（抓取）: {"url": "www.themoviedb.org/tv/1396/season/1"} —— 网页抓取兜底
+    """
+    api_key = (renamer.settings.get("tmdb_api_key", "") if renamer else "").strip()
+    series_id = req.get("series_id")
+    season = req.get("season")
+    if series_id and season is not None:
+        if api_key:
+            try:
+                episodes = renamer.tmdb_api_season(int(series_id), int(season), api_key)
+                return {"episodes": episodes, "source": "api"}
+            except Exception as e:
+                return JSONResponse({"error": f"TMDB API 调用失败: {e}"}, status_code=502)
+        # 无 API Key：自动构造 Season 页面 URL 走网页抓取兜底
+        url = f"https://www.themoviedb.org/tv/{int(series_id)}/season/{int(season)}?language=zh-CN"
+    else:
+        url = req.get("url", "").strip()
+        if not url:
+            return JSONResponse({"error": "缺少 series_id/season 或 url"}, status_code=400)
     try:
-        import requests
-        from bs4 import BeautifulSoup
-        
-        res = requests.get(url, headers=headers, timeout=10)
+        if url.startswith("http"):
+            url_full = url
+        elif url.startswith("www."):
+            url_full = "https://" + url
+        else:
+            url_full = "https://www.themoviedb.org/" + url.lstrip("/")
+        res = requests.get(url_full, headers=_tmdb_headers(), timeout=15)
         res.raise_for_status()
+        from bs4 import BeautifulSoup
         soup = BeautifulSoup(res.text, 'html.parser')
-        
         episodes = {}
-        # 尝试选取包含所有集数信息的元素
-        for a in soup.select('h3 > a'):
-            href = a.get('href', '')
-            if '/episode/' in href:
-                # 获取 URL 最后的数字部分 `/tv/85937/season/1/episode/1`
-                ep_num = href.split('/episode/')[-1].split('?')[0].strip('/')
-                if ep_num.isdigit():
-                    episodes[str(int(ep_num))] = a.get_text(strip=True)
-                    
-        # 额外兼容策略: class包含 info 的包裹层
-        if not episodes:
-            for wrapper in soup.select('.info'):
-                a = wrapper.select_one('a[href*="/episode/"]')
-                if a:
-                    href = a.get('href', '')
-                    ep_num = href.split('/episode/')[-1].split('?')[0].strip('/')
-                    if ep_num.isdigit():
-                        episodes[str(int(ep_num))] = a.get_text(strip=True)
-                        
-        return {"episodes": episodes}
+        for card in soup.select('.episode_list .card'):
+            num_el = card.select_one('.episode_number')
+            name_el = card.select_one('.episode_title h3 a')
+            if num_el and name_el:
+                episodes[num_el.get_text(strip=True)] = name_el.get_text(strip=True)
+        return {"episodes": episodes, "source": "scrape"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"抓取TMDB失败: {str(e)}")
+        return JSONResponse({"error": f"TMDB 抓取失败: {e}"}, status_code=502)
 
-@app.post("/api/generate_name")
-def generate_name(req: dict = Body(...)):
-    """
-    接收 episode_info 和 naming_pattern，返回标准名称
-    """
-    if not renamer_instance:
-        raise HTTPException(status_code=401, detail="请先登录")
-    
-    episode_info = req.get("episode_info", {})
-    naming_pattern = req.get("naming_pattern", "{title}.S{season}E{episode:02d}")
-    
-    # 支持 {episode_title}
-    new_name = renamer_instance.generate_standard_name(episode_info, naming_pattern)
-    
-    return {"new_name": new_name}
+
+# ==================== 重命名 ====================
 
 @app.post("/api/rename")
-def batch_rename(req: RenameRequest):
-    if not renamer_instance:
-        raise HTTPException(status_code=401, detail="请先登录")
-    
-    rename_mapping = {}
-    for item in req.renames:
-        src_name = html.unescape(item.path)
-        new_name = html.unescape(item.new_name)
-        rename_mapping[src_name] = new_name
-    success = renamer_instance.batch_rename(req.dir_path, rename_mapping)
-    if success:
-        return {"status": "success", "message": "批量重命名完成"}
-    else:
-        raise HTTPException(status_code=500, detail="批量重命名失败或部分失败")
+def api_rename(req: dict):
+    """批量重命名。逐个调用单文件重命名以获取每项结果"""
+    if not renamer:
+        return JSONResponse({"error": "未登录"}, status_code=401)
+    path = req.get("path", "/")
+    base = path.rstrip("/")
+    renames = req.get("renames", [])
+    errors = []
+    success = 0
+    for item in renames:
+        old = (item.get("old_name") or "").strip()
+        new = (item.get("new_name") or "").strip()
+        if not old or not new or old == new:
+            continue
+        full = (base + "/" + old) if base else "/" + old
+        ok = bool(renamer.rename_single_item(full, new))
+        if ok:
+            success += 1
+        else:
+            errors.append(f"「{old}」重命名失败")
+    total = len(errors) + success
+    failed = total - success
+    return {
+        "success": failed == 0 and total > 0,
+        "renamed_count": success,
+        "total": total,
+        "failed": failed,
+        "errors": errors,
+        "message": f"成功 {success} 个，失败 {failed} 个" if failed else f"成功重命名 {success} 个",
+    }
 
-class RenameSingleRequest(BaseModel):
-    path: str
-    new_name: str
 
-@app.post("/api/rename_single")
-def rename_single(req: RenameSingleRequest):
-    if not renamer_instance:
-        raise HTTPException(status_code=401, detail="请先登录")
-    
-    path = html.unescape(req.path)
-    new_name = html.unescape(req.new_name)
-    success = renamer_instance.rename_single_item(path, new_name)
-    if success:
-        return {"status": "success", "message": "重命名成功"}
-    else:
-        raise HTTPException(status_code=500, detail="重命名失败")
+# ==================== 静态文件与页面 ====================
 
-# 挂载前端页面
-@app.get("/")
-def index():
-    return FileResponse(resource_path("frontend/index.html"))
+@app.get("/", response_class=HTMLResponse)
+async def index():
+    try:
+        with open(os.path.join(FRONTEND_DIR, 'index.html'), 'r', encoding='utf-8') as f:
+            return f.read()
+    except FileNotFoundError:
+        return "<h1>前端文件未找到</h1><p>请检查 frontend/index.html 是否存在</p>"
 
-def open_browser():
-    webbrowser.open_new("http://127.0.0.1:8000")
+try:
+    if os.path.isdir(FRONTEND_DIR):
+        app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
+except Exception:
+    pass
 
 if __name__ == "__main__":
-    print("启动服务器: http://127.0.0.1:8000")
-    threading.Timer(1.5, open_browser).start()
-    uvicorn.run(app, host="127.0.0.1", port=8000, reload=False)
+    import uvicorn
+    host = sys.argv[1] if len(sys.argv) > 1 else "127.0.0.1"
+    port = int(sys.argv[2]) if len(sys.argv) > 2 else 8000
+    print("=" * 50)
+    print("OpenList 交互式剧集重命名工具 (Web 服务)")
+    print("=" * 50)
+    print(f"请打开浏览器访问: http://{host}:{port}/")
+    print(f"API 文档: http://{host}:{port}/docs")
+    print("=" * 50)
+    uvicorn.run(app, host=host, port=port)
