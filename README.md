@@ -59,6 +59,49 @@ python server.py
 
 可选监听地址：`python server.py 0.0.0.0 8000`（默认 `127.0.0.1:8000`）。
 
+## 直接下载运行（编译产物）
+
+无需 Python 环境，直接从仓库的 [Releases](../../../releases) 下载对应平台产物即可使用：
+启动后服务监听 `0.0.0.0:8000`，浏览器打开 `http://127.0.0.1:8000`，登录你的 OpenList 服务地址（默认端口 5244）即可。配置/令牌保存在 `$EPISODE_PATH`（默认 `/tmp`，Linux deb 服务为 `/var/lib/openlist-episode-rename`）。
+
+> 平台产物均为按架构编译：Windows/Linux 分 **amd64(x64)** 与 **arm64**，macOS 分 **x64** 与 **arm64**，请按设备架构选择。
+
+### Windows
+
+```powershell
+.\openlist-episode-renamer-windows-amd64.exe
+# 浏览器打开 http://127.0.0.1:8000；关闭该终端即停止服务
+```
+
+### Linux
+
+**AppImage（免安装运行）**
+
+```bash
+chmod +x openlist-episode-renamer-linux-x86_64.AppImage     # arm64 机型用 -aarch64.AppImage
+./openlist-episode-renamer-linux-x86_64.AppImage
+# 无 FUSE 环境时用: ./openlist-episode-renamer-linux-x86_64.AppImage --appimage-extract-and-run
+```
+
+**deb 包（可注册为系统服务）**
+
+```bash
+sudo dpkg -i openlist-episode-renamer_<版本>_amd64.deb      # arm64 用对应 _arm64.deb
+sudo apt-get install -f                                      # 如有未满足依赖
+sudo systemctl enable --now openlist-episode-renamer         # 开机自启并启动
+# 日志: journalctl -u openlist-episode-renamer -f
+```
+
+### macOS（DMG）
+
+```bash
+hdiutil attach openlist-episode-renamer-macos-arm64.dmg     # Intel 用 -x64.dmg
+# 将 openlist-episode-renamer 拷出后运行：
+./openlist-episode-renamer
+# 首次被 Gatekeeper 拦截：右键 → 打开；或:
+#   xattr -d com.apple.quarantine ./openlist-episode-renamer
+```
+
 ## Docker 部署
 
 项目自带多阶段生产镜像 `Dockerfile` 与编排文件：
