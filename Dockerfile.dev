@@ -10,6 +10,6 @@ WORKDIR /work
 
 # 项目依赖（README 列出的）
 RUN pip install --no-cache-dir \
-        requests fastapi "uvicorn[standard]" beautifulsoup4 rich
+        requests fastapi "uvicorn[standard]" beautifulsoup4
 
 CMD ["bash"]
