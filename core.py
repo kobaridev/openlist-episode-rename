@@ -23,14 +23,13 @@ class InteractiveEpisodeRenamer:
         self.token = None
         self.current_path = "/"
         if platform.system() == "Windows":
-            self.token_file_path = os.path.join(os.environ.get("EPISODE_PATH", "USERPROFILE"), "token")
-            self.config_file_path = os.path.join(os.environ.get("EPISODE_PATH", "USERPROFILE"), "episode_renamer.conf")
-        elif platform.system() == "Linux":
-            self.token_file_path = os.path.join(os.environ.get("EPISODE_PATH", "/tmp"), "token")
-            self.config_file_path = os.path.join(os.environ.get("EPISODE_PATH", "/tmp"), "episode_renamer.conf")
-        elif platform.system() == "Darwin":
-            self.token_file_path = os.path.join(os.environ.get("EPISODE_PATH", "/tmp"), "token")
-            self.config_file_path = os.path.join(os.environ.get("EPISODE_PATH", "/tmp"), "episode_renamer.conf")
+            ep_path = os.path.expandvars(os.environ.get("EPISODE_PATH", "%USERPROFILE%"))
+        else:
+            ep_path = os.environ.get("EPISODE_PATH", "/tmp")
+        self.token_file_path = os.path.join(ep_path, "token")
+        self.config_file_path = os.path.join(ep_path, "episode_renamer.conf")
+        self.settings_file_path = os.path.join(ep_path, "episode_renamer.settings.json")
+        self.settings = self.load_settings()
 
 
 
@@ -78,6 +77,77 @@ class InteractiveEpisodeRenamer:
             return {
                 'base_url': 'http://127.0.0.1:5244'
             }
+
+    # ==================== 用户设置（JSON 持久化） ====================
+
+    DEFAULT_SETTINGS = {
+        "tmdb_api_key": "",
+        "delimiter": ".",
+        "use_episode_title": True,
+        "default_season": "1",
+        "default_episode_start": "1",
+        "theme": "light",
+    }
+
+    def load_settings(self) -> dict:
+        """加载用户设置，缺失字段用默认值补齐"""
+        settings = dict(self.DEFAULT_SETTINGS)
+        try:
+            if os.path.exists(self.settings_file_path):
+                with open(self.settings_file_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict):
+                    settings.update(data)
+        except Exception as e:
+            print(f"加载设置失败，使用默认值: {e}")
+        return settings
+
+    def save_settings(self, settings: dict) -> dict:
+        """合并并保存用户设置"""
+        try:
+            merged = dict(self.DEFAULT_SETTINGS)
+            merged.update({k: v for k, v in settings.items() if k in self.DEFAULT_SETTINGS})
+            os.makedirs(os.path.dirname(self.settings_file_path), exist_ok=True)
+            with open(self.settings_file_path, "w", encoding="utf-8") as f:
+                json.dump(merged, f, ensure_ascii=False, indent=2)
+            self.settings = merged
+            print(f"设置已保存到 {self.settings_file_path}")
+        except Exception as e:
+            print(f"保存设置失败: {e}")
+        return self.settings
+
+    # ==================== TMDB API（配置了 Key 时使用，否则回退网页抓取） ====================
+
+    def tmdb_api_search(self, keyword: str, api_key: str) -> List[Dict]:
+        """通过 TMDB REST API 搜索剧集"""
+        res = requests.get(
+            "https://api.themoviedb.org/3/search/tv",
+            params={"api_key": api_key, "query": keyword, "language": "zh-CN"},
+            timeout=15
+        )
+        res.raise_for_status()
+        results = res.json().get("results", [])
+        return [{
+            "id": r.get("id"),
+            "name": r.get("name", ""),
+            "overview": (r.get("overview") or "")[:120],
+            "year": r.get("first_air_date", "")[:4] if r.get("first_air_date") else "",
+            "poster": (f"https://image.tmdb.org/t/p/w185{r['poster_path']}" if r.get("poster_path") else ""),
+        } for r in results[:10]]
+
+    def tmdb_api_season(self, tmdb_id: int, season: int, api_key: str) -> Dict:
+        """通过 TMDB REST API 获取指定季的分集名称，返回 {集数: 名称}"""
+        res = requests.get(
+            f"https://api.themoviedb.org/3/tv/{tmdb_id}/season/{season}",
+            params={"api_key": api_key, "language": "zh-CN"},
+            timeout=15
+        )
+        res.raise_for_status()
+        eps = {}
+        for e in res.json().get("episodes", []):
+            if e.get("name"):
+                eps[str(e.get("episode_number"))] = e["name"]
+        return eps
 
     def validate_current_user(self) -> bool:
         """
@@ -349,152 +419,6 @@ class InteractiveEpisodeRenamer:
             print(f"重命名请求失败: {e}")
             return False
 
-    def display_directories(self, path: str = "/"):
-        """
-        显示指定路径下的所有目录
-        """
-        directories = self.list_directories(path)
-        
-        if not directories:
-            print("该目录下没有子目录")
-            return
-        
-        print(f"\n路径 '{path}' 下的目录:")
-        print("-" * 50)
-        for i, directory in enumerate(directories, 1):
-            print(f"{i}. {directory['name']}")
-        print("-" * 50)
-        
-        return directories
-
-    def display_files(self, path: str = "/"):
-        """
-        显示指定路径下的所有文件
-        """
-        files = self.list_files(path)
-        
-        if not files:
-            print("该目录下没有文件")
-            return
-        
-        print(f"\n路径 '{path}' 下的文件:")
-        print("-" * 50)
-        for i, file in enumerate(files, 1):
-            size = file.get('size', 0)
-            # 转换大小为人类可读格式
-            size_str = self.human_readable_size(size)
-            print(f"{i}. {file['name']} ({size_str})")
-        print("-" * 50)
-        
-        return files
-
-    def human_readable_size(self, size_bytes: int) -> str:
-        """
-        将字节大小转换为人类可读格式
-        """
-        if size_bytes == 0:
-            return "0B"
-        
-        size_units = ['B', 'KB', 'MB', 'GB', 'TB']
-        unit_index = 0
-        size = float(size_bytes)
-        
-        while size >= 1024.0 and unit_index < len(size_units) - 1:
-            size /= 1024.0
-            unit_index += 1
-        
-        return f"{size:.1f}{size_units[unit_index]}"
-
-    def navigate_to_directory(self, path: str = "/"):
-        """
-        导航到指定目录
-        """
-        self.current_path = path
-        print(f"\n当前路径: {self.current_path}")
-        self.display_directories(path)
-        self.display_files(path)
-
-    def interactive_navigate(self):
-        """
-        交互式导航目录
-        """
-        while True:
-            print(f"\n当前路径: {self.current_path}")
-            
-            # 显示当前目录的子目录
-            directories = self.list_directories(self.current_path)
-            
-            print("请选择操作:")
-            print("0. 返回上级目录")
-            
-            if directories:
-                for i, directory in enumerate(directories, 1):
-                    print(f"{i}. 进入目录: {directory['name']}")
-                
-                print(f"{len(directories) + 1}. 查看当前目录文件")
-                print(f"{len(directories) + 2}. 在当前目录进行批量重命名")
-                print(f"{len(directories) + 3}. 重命名单个文件或文件夹")
-                print(f"{len(directories) + 4}. 退出")
-            else:
-                # 即使没有子目录，也要显示文件查看和重命名选项
-                print("1. 查看当前目录文件")
-                print("2. 在当前目录进行批量重命名")
-                print("3. 重命名单个文件或文件夹")
-                print("4. 退出")
-            
-            try:
-                choice = input("\n请输入选项编号: ").strip()
-                choice_num = int(choice)
-                
-                if choice_num == 0:  # 返回上级目录
-                    if self.current_path != "/":
-                        parent_path = os.path.dirname(self.current_path)
-                        if parent_path == "":
-                            parent_path = "/"
-                        self.navigate_to_directory(parent_path)
-                
-                elif directories and 1 <= choice_num <= len(directories):  # 进入选择的目录
-                    selected_dir = directories[choice_num - 1]['name']
-                    new_path = os.path.join(self.current_path, selected_dir)
-                    # 处理根目录情况
-                    if self.current_path == "/":
-                        new_path = f"/{selected_dir}"
-                    self.navigate_to_directory(new_path)
-                
-                elif directories:  # 有子目录的情况
-                    if choice_num == len(directories) + 1:  # 查看当前目录文件
-                        self.display_files(self.current_path)
-                    elif choice_num == len(directories) + 2:  # 批量重命名
-                        self.interactive_batch_rename()
-                    elif choice_num == len(directories) + 3:  # 重命名单个项目
-                        self.interactive_rename_single_item()
-                    elif choice_num == len(directories) + 4:  # 退出
-                        print("退出程序")
-                        break
-                    else:
-                        print("无效的选择，请重新输入")
-                
-                else:  # 没有子目录的情况
-                    if choice_num == 1:  # 查看当前目录文件
-                        self.display_files(self.current_path)
-                    elif choice_num == 2:  # 批量重命名
-                        self.interactive_batch_rename()
-                    elif choice_num == 3:  # 重命名单个项目
-                        self.interactive_rename_single_item()
-                    elif choice_num == 4:  # 退出
-                        print("退出程序")
-                        break
-                    else:
-                        print("无效的选择，请重新输入")
-                    
-            except ValueError:
-                print("请输入有效的数字")
-            except KeyboardInterrupt:
-                print("\n\n程序被用户中断")
-                break
-            except Exception as e:
-                print(f"发生错误: {e}")
-
     def extract_episode_info(self, filename: str) -> Dict[str, str]:
         """
         从文件名中提取剧集信息
@@ -560,482 +484,3 @@ class InteractiveEpisodeRenamer:
             print(f"生成标准名称时出错: {e}")
             return episode_info.get('title', 'Unknown')
 
-    def interactive_batch_rename(self):
-        """
-        交互式批量重命名
-        """
-        print(f"\n在路径 '{self.current_path}' 进行批量重命名")
-        
-        # 获取当前目录的文件
-        files = self.list_files(self.current_path)
-        if not files:
-            print("当前目录没有文件")
-            return
-        
-        # 过滤视频和字幕文件
-        video_extensions = {'.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.mpg', '.mpeg', '.ts', '.m2ts', '.vob', '.iso'}
-        subtitle_extensions = {'.ass', '.srt', '.sup', '.ssa', '.sub', '.vtt'}
-        media_extensions = video_extensions | subtitle_extensions
-        video_files = []
-
-        for file in files:
-            filename = file.get('name', '')
-            ext = os.path.splitext(filename)[1].lower()
-            if ext in media_extensions:
-                video_files.append(file)
-
-        if not video_files:
-            print("当前目录没有视频或字幕文件")
-            return
-        
-        print(f"\n找到 {len(video_files)} 个媒体文件（视频+字幕）:")
-        for i, file in enumerate(video_files, 1):
-            print(f"{i}. {file['name']}")
-        
-        print("\n选择重命名方式:")
-        print("1. 智能重命名（自动识别剧集信息）")
-        print("2. 手动输入模式（为每个文件指定新名称）")
-        print("3. 统一命名模式（为所有文件使用相同模式，递增集数）")
-        print("4. 返回上级菜单")
-        
-        try:
-            choice = input("\n请选择重命名方式 (1-4): ").strip()
-            
-            if choice == "1":
-                self.smart_rename(video_files)
-            elif choice == "2":
-                self.manual_rename(video_files)
-            elif choice == "3":
-                self.unified_rename(video_files)
-            elif choice == "4":
-                return
-            else:
-                print("无效的选择")
-        
-        except KeyboardInterrupt:
-            print("\n\n操作被用户中断")
-
-    def smart_rename(self, video_files: List[Dict]):
-        """
-        智能重命名
-        """
-        print("\n智能重命名模式")
-        print("选择命名模式:")
-        print("1. 标题.S01E01")
-        print("2. Season_01_Episode_01_标题")
-        print("3. 自定义模式")
-        
-        try:
-            choice = input("\n请选择命名模式 (1-3): ").strip()
-            
-            if choice == "1":
-                naming_pattern = "{title}.S{season}E{episode:02d}"
-            elif choice == "2":
-                naming_pattern = "Season_{season}_Episode_{episode:02d}_{title}"
-            elif choice == "3":
-                naming_pattern = input("请输入自定义命名模式 (例如: '{title}.S{season}E{episode:02d}'): ").strip()
-                if not naming_pattern:
-                    naming_pattern = "{title}.S{season}E{episode:02d}"
-            else:
-                print("无效选择，使用默认模式")
-                naming_pattern = "{title}.S{season}E{episode:02d}"
-            
-            # 创建重命名映射
-            rename_mapping = {}
-            for file in video_files:
-                filename = file['name']
-                ext = os.path.splitext(filename)[1]
-                
-                # 提取剧集信息
-                episode_info = self.extract_episode_info(filename)
-                episode_info['extension'] = ext
-                
-                # 生成新文件名
-                new_name = self.generate_standard_name(episode_info, naming_pattern) + ext
-                rename_mapping[filename] = new_name
-            
-            # 显示重命名计划
-            print("\n重命名计划:")
-            for old_name, new_name in rename_mapping.items():
-                print(f"  {old_name} -> {new_name}")
-            
-            confirm = input(f"\n确认执行重命名？这将重命名 {len(rename_mapping)} 个文件 (y/N): ").strip().lower()
-            if confirm in ['y', 'yes']:
-                success = self.batch_rename(self.current_path, rename_mapping)
-                if success:
-                    print("批量重命名完成！")
-                else:
-                    print("批量重命名失败")
-            else:
-                print("取消重命名")
-        
-        except KeyboardInterrupt:
-            print("\n\n操作被用户中断")
-
-    def manual_rename(self, video_files: List[Dict]):
-        """
-        手动重命名
-        """
-        print("\n手动重命名模式")
-        print("请为每个文件输入新名称:")
-        
-        rename_mapping = {}
-        for file in video_files:
-            old_name = file['name']
-            new_name = input(f"\n'{old_name}' 的新名称 (直接回车跳过): ").strip()
-            
-            if new_name:
-                rename_mapping[old_name] = new_name
-            else:
-                print("跳过此文件")
-        
-        if rename_mapping:
-            print("\n重命名计划:")
-            for old_name, new_name in rename_mapping.items():
-                print(f"  {old_name} -> {new_name}")
-            
-            confirm = input(f"\n确认执行重命名？这将重命名 {len(rename_mapping)} 个文件 (y/N): ").strip().lower()
-            if confirm in ['y', 'yes']:
-                success = self.batch_rename(self.current_path, rename_mapping)
-                if success:
-                    print("批量重命名完成！")
-                else:
-                    print("批量重命名失败")
-            else:
-                print("取消重命名")
-        else:
-            print("没有设置任何重命名")
-
-    def unified_rename(self, video_files: List[Dict]):
-        """
-        统一命名模式 - 为所有文件使用相同模式，递增集数
-        """
-        print("\n统一命名模式")
-        print("将为所有文件使用相同的命名模式，但集数会自动递增")
-        
-        # 获取用户输入
-        show_name = input("请输入剧集名称: ").strip()
-        if not show_name:
-            print("剧集名称不能为空")
-            return
-            
-        season = input("请输入季数 (默认为1): ").strip()
-        if not season or not season.isdigit():
-            season = "1"
-        else:
-            season = str(int(season))
-        
-        start_episode = input("请输入起始集数 (默认为1): ").strip()
-        if not start_episode or not start_episode.isdigit():
-            start_episode = "1"
-        else:
-            start_episode = str(int(start_episode))
-        
-        naming_pattern_input = input("请选择命名模式:\n1. 剧名.S01E01\n2. Season_01_Episode_01_剧名\n3. 自定义模式\n请输入选择 (1-3, 默认为1): ").strip()
-        
-        if naming_pattern_input == "2":
-            naming_pattern = "Season_{season}_Episode_{episode:02d}_{title}"
-        elif naming_pattern_input == "3":
-            naming_pattern = input("请输入自定义命名模式 (例如: '{title}_S{season}E{episode:02d}'): ").strip()
-            if not naming_pattern:
-                naming_pattern = "{title}.S{season}E{episode:02d}"
-        else:
-            naming_pattern = "{title}.S{season}E{episode:02d}"
-        
-        # 创建重命名映射
-        rename_mapping = {}
-        subtitle_extensions = {'.ass', '.srt', '.sup', '.ssa', '.sub', '.vtt'}
-
-        # 分离视频文件和字幕文件
-        pure_video_files = []
-        pure_subtitle_files = []
-        for file in video_files:
-            ext = os.path.splitext(file['name'])[1].lower()
-            if ext in subtitle_extensions:
-                pure_subtitle_files.append(file)
-            else:
-                pure_video_files.append(file)
-
-        # 视频文件按顺序递增集数
-        current_episode = int(start_episode)
-        video_episode_map = {}  # 原文件名基底 -> 集数 的映射
-        for file in pure_video_files:
-            old_name = file['name']
-            ext = os.path.splitext(old_name)[1]
-            base_name = os.path.splitext(old_name)[0]
-
-            new_name = naming_pattern.format(
-                season=season.zfill(2),
-                episode=current_episode,
-                title=show_name
-            ) + ext
-
-            rename_mapping[old_name] = new_name
-            video_episode_map[base_name] = current_episode
-            current_episode += 1
-
-        # 字幕文件：匹配对应视频的集数
-        sub_episode = int(start_episode)
-        for file in pure_subtitle_files:
-            old_name = file['name']
-            ext = os.path.splitext(old_name)[1]
-            base_name = os.path.splitext(old_name)[0]
-
-            # 尝试在视频文件中找到同名基底的匹配
-            matched_episode = video_episode_map.get(base_name)
-            if matched_episode is None:
-                # 尝试通过提取集数来匹配
-                import re
-                ep_match = re.search(r'[Ee][Pp]?(\d+)|第(\d+)[集话話]|(\d+)', base_name)
-                if ep_match:
-                    orig_ep = int(ep_match.group(1) or ep_match.group(2) or ep_match.group(3))
-                    for vbase, vep in video_episode_map.items():
-                        v_match = re.search(r'[Ee][Pp]?(\d+)|第(\d+)[集话話]|(\d+)', vbase)
-                        if v_match:
-                            v_orig_ep = int(v_match.group(1) or v_match.group(2) or v_match.group(3))
-                            if v_orig_ep == orig_ep:
-                                matched_episode = vep
-                                break
-
-            if matched_episode is not None:
-                ep = matched_episode
-            else:
-                ep = sub_episode
-                sub_episode += 1
-
-            new_name = naming_pattern.format(
-                season=season.zfill(2),
-                episode=ep,
-                title=show_name
-            ) + ext
-
-            rename_mapping[old_name] = new_name
-        
-        # 显示重命名计划
-        print("\n重命名计划:")
-        for old_name, new_name in rename_mapping.items():
-            print(f"  {old_name} -> {new_name}")
-        
-        confirm = input(f"\n确认执行重命名？这将重命名 {len(rename_mapping)} 个文件 (y/N): ").strip().lower()
-        if confirm in ['y', 'yes']:
-            success = self.batch_rename(self.current_path, rename_mapping)
-            if success:
-                print("批量重命名完成！")
-            else:
-                print("批量重命名失败")
-        else:
-            print("取消重命名")
-
-    def regex_rename(self, video_files: List[Dict]):
-        """
-        正则替换重命名
-        """
-        print("\n正则替换模式")
-        
-        try:
-            pattern = input("请输入查找的正则表达式: ").strip()
-            if not pattern:
-                print("正则表达式不能为空")
-                return
-            
-            replacement = input("请输入替换的内容 (可使用捕获组如 \\1, \\2): ").strip()
-            
-            rename_mapping = {}
-            for file in video_files:
-                old_name = file['name']
-                new_name = re.sub(pattern, replacement, old_name)
-                
-                if new_name != old_name:
-                    rename_mapping[old_name] = new_name
-            
-            if not rename_mapping:
-                print("没有匹配到任何文件")
-                return
-            
-            print("\n重命名计划:")
-            for old_name, new_name in rename_mapping.items():
-                print(f"  {old_name} -> {new_name}")
-            
-            confirm = input(f"\n确认执行重命名？这将重命名 {len(rename_mapping)} 个文件 (y/N): ").strip().lower()
-            if confirm in ['y', 'yes']:
-                success = self.batch_rename(self.current_path, rename_mapping)
-                if success:
-                    print("批量重命名完成！")
-                else:
-                    print("批量重命名失败")
-            else:
-                print("取消重命名")
-        
-        except re.error as e:
-            print(f"正则表达式错误: {e}")
-        except KeyboardInterrupt:
-            print("\n\n操作被用户中断")
-
-    def interactive_rename_single_item(self):
-        """
-        交互式重命名单个文件或文件夹
-        """
-        print(f"\n重命名单个文件或文件夹 - 当前路径: {self.current_path}")
-        
-        # 获取当前目录的所有内容
-        contents = self.get_directory_contents(self.current_path)
-        if not contents:
-            print("当前目录为空或无法获取内容")
-            return
-        
-        # 分别列出文件和目录
-        files = [item for item in contents if not item.get('is_dir', False)]
-        directories = [item for item in contents if item.get('is_dir', False)]
-        
-        print(f"\n当前路径 '{self.current_path}' 下的内容:")
-        print("-" * 50)
-        
-        # 显示目录
-        if directories:
-            print("目录:")
-            for i, directory in enumerate(directories, 1):
-                print(f"D{i}. {directory['name']}")
-        
-        # 显示文件
-        if files:
-            print("文件:")
-            for i, file in enumerate(files, len(directories) + 1):
-                size = file.get('size', 0)
-                size_str = self.human_readable_size(size)
-                print(f"F{i}. {file['name']} ({size_str})")
-        
-        print("-" * 50)
-        
-        if not contents:
-            print("当前目录下没有任何内容")
-            return
-        
-        try:
-            choice = input("\n请输入要重命名的项目编号 (例如 D1 或 F3，或直接输入名称): ").strip()
-            
-            selected_item = None
-            selected_type = ""  # 'file' or 'dir'
-            
-            # 检查是否是通过编号选择
-            if choice.lower().startswith('d') and choice[1:].isdigit():
-                idx = int(choice[1:]) - 1
-                if 0 <= idx < len(directories):
-                    selected_item = directories[idx]
-                    selected_type = "dir"
-            elif choice.lower().startswith('f') and choice[1:].isdigit():
-                idx = int(choice[1:]) - 1 - len(directories)
-                if 0 <= idx < len(files):
-                    selected_item = files[idx]
-                    selected_type = "file"
-            else:
-                # 检查是否是直接输入名称
-                for item in directories:
-                    if item['name'] == choice:
-                        selected_item = item
-                        selected_type = "dir"
-                        break
-                if not selected_item:
-                    for item in files:
-                        if item['name'] == choice:
-                            selected_item = item
-                            selected_type = "file"
-                            break
-            
-            if not selected_item:
-                print("未找到指定的项目")
-                return
-            
-            old_name = selected_item['name']
-            print(f"\n选择的项目: {old_name} (类型: {'目录' if selected_type == 'dir' else '文件'})")
-            
-            new_name = input(f"请输入新的名称 (当前: {old_name}): ").strip()
-            
-            if not new_name:
-                print("新名称不能为空")
-                return
-            
-            if new_name == old_name:
-                print("新名称与旧名称相同，无需重命名")
-                return
-            
-            # 构建完整路径
-            if self.current_path == "/":
-                full_path = f"/{old_name}"
-            else:
-                full_path = f"{self.current_path}/{old_name}"
-            
-            confirm = input(f"\n确认将 '{old_name}' 重命名为 '{new_name}' ? (y/N): ").strip().lower()
-            if confirm in ['y', 'yes']:
-                success = self.rename_single_item(full_path, new_name)
-                if success:
-                    print("重命名成功完成！")
-                else:
-                    print("重命名失败")
-            else:
-                print("取消重命名")
-        
-        except KeyboardInterrupt:
-            print("\n\n操作被用户中断")
-        except Exception as e:
-            print(f"发生错误: {e}")
-
-
-def main():
-    """
-    交互式主程序
-    """
-    print("OpenList 交互式剧集重命名工具")
-    print("=" * 40)
-    
-    # 创建重命名实例
-    renamer = InteractiveEpisodeRenamer("", "", "")
-    
-    # 从配置文件加载默认地址
-    config = renamer.load_config()
-    default_base_url = config['base_url']
-    
-    # 获取用户输入
-    base_url = input(f"请输入OpenList服务地址 (默认: {default_base_url}): ").strip()
-    if not base_url:
-        base_url = default_base_url
-    
-    # 保存新的地址到配置文件
-    renamer.save_config(base_url)
-    
-    username = input("请输入用户名: ").strip()
-    if not username:
-        print("用户名不能为空")
-        return
-    
-    import getpass
-    # 创建重命名实例
-    renamer = InteractiveEpisodeRenamer(base_url, username, "")
-    
-    # 尝试从本地文件加载令牌
-    if renamer.load_token():
-        # 验证令牌是否有效以及是否属于当前用户
-        print("正在验证本地令牌...")
-        # 尝试获取用户信息或验证令牌与用户名的匹配
-        if renamer.validate_current_user():
-            print("令牌验证成功，跳过登录步骤")
-        else:
-            print("令牌与当前用户不匹配或已过期，需要重新登录")
-            password = getpass.getpass("请输入密码进行重新登录: ")
-            renamer = InteractiveEpisodeRenamer(base_url, username, password)
-            if not renamer.login():
-                print("无法登录到OpenList服务")
-                return
-    else:
-        # 登录
-        password = getpass.getpass("请输入密码: ")
-        renamer = InteractiveEpisodeRenamer(base_url, username, password)
-        if not renamer.login():
-            print("无法登录到OpenList服务")
-            return
-    
-    # 开始交互式导航
-    renamer.interactive_navigate()
-
-
-if __name__ == "__main__":
-    main()
