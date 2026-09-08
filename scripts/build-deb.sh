@@ -42,8 +42,8 @@ After=network.target
 [Service]
 Type=simple
 ExecStart=/usr/bin/${PKG} 0.0.0.0 8000
-ExecStartPre=/bin/mkdir -p /var/lib/openlist-episode-rename
-Environment=EPISODE_PATH=/var/lib/openlist-episode-rename
+ExecStartPre=/bin/mkdir -p /var/lib/openlist-episode-renamer
+Environment=EPISODE_PATH=/var/lib/openlist-episode-renamer
 Restart=on-failure
 
 [Install]

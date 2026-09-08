@@ -11,7 +11,7 @@
 ## 项目结构
 
 ```
-openlist-episode-rename/
+openlist-episode-renamer/
 ├── core.py                      # 核心逻辑（OpenList API 封装、剧集识别、重命名引擎、配置持久化）
 ├── server.py                    # FastAPI Web 服务端（托管前端 + REST API）
 ├── frontend/
@@ -62,7 +62,7 @@ python server.py
 ## 直接下载运行（编译产物）
 
 无需 Python 环境，直接从仓库的 [Releases](../../../releases) 下载对应平台产物即可使用：
-启动后服务监听 `0.0.0.0:8000`，浏览器打开 `http://127.0.0.1:8000`，登录你的 OpenList 服务地址（默认端口 5244）即可。配置/令牌保存在 `$EPISODE_PATH`（默认 `/tmp`，Linux deb 服务为 `/var/lib/openlist-episode-rename`）。
+启动后服务监听 `0.0.0.0:8000`，浏览器打开 `http://127.0.0.1:8000`，登录你的 OpenList 服务地址（默认端口 5244）即可。配置/令牌保存在 `$EPISODE_PATH`（默认 `/tmp`，Linux deb 服务为 `/var/lib/openlist-episode-renamer`）。
 
 > 平台产物均为按架构编译：Windows/Linux 分 **amd64(x64)** 与 **arm64**，macOS 分 **x64** 与 **arm64**，请按设备架构选择。
 
@@ -107,7 +107,7 @@ hdiutil attach openlist-episode-renamer-macos-arm64.dmg     # Intel 用 -x64.dmg
 项目自带多阶段生产镜像 `Dockerfile` 与编排文件：
 
 ```bash
-# 构建并启动（后台运行，容器名 openlist-episode-rename）
+# 构建并启动（后台运行，容器名 openlist-episode-renamer）
 docker compose up -d --build
 
 # 查看日志 / 停止
@@ -122,25 +122,25 @@ docker compose down
 > 若宿主机 8000 端口被占用（例如本机已在跑 8000 的 Web 服务），可改 `docker-compose.yml` 的端口映射，如 `"8001:8000"`；
 > 若与 OpenList 同机同网段且走 host 网络更顺，可把 compose 中的映射改回 `network_mode: host`（此时服务直绑宿主机 8000）。
 
-### 依赖层「openlist-episode-rename:base」复用（离线构建）
+### 依赖层「openlist-episode-renamer:base」复用（离线构建）
 
 pip 首次下载依赖卡在 `pip install 4/6`？`Dockerfile` 分两阶段，把「装好依赖」做成独立镜像层，构建一次永久复用，之后改代码只 COPY 本地文件、完全离线秒级完成：
 
 ```bash
 # 1. 构建依赖层（默认走清华镜像源，约 30 秒；也可换阿里云或官方源）
-docker build --target deps -t openlist-episode-rename:base .
-#    docker build --target deps --build-arg PIP_INDEX=https://mirrors.aliyun.com/pypi/simple -t openlist-episode-rename:base .
-#    docker build --target deps --build-arg PIP_INDEX=https://pypi.org/simple  -t openlist-episode-rename:base .
+docker build --target deps -t openlist-episode-renamer:base .
+#    docker build --target deps --build-arg PIP_INDEX=https://mirrors.aliyun.com/pypi/simple -t openlist-episode-renamer:base .
+#    docker build --target deps --build-arg PIP_INDEX=https://pypi.org/simple  -t openlist-episode-renamer:base .
 
 # 2. 之后任何一次应用构建都在 base 上直接 COPY 仓库文件，不再联网
-docker build -t openlist-episode-rename:latest .
+docker build -t openlist-episode-renamer:latest .
 ```
 
 ### 开发容器
 
 ```bash
-docker build -f Dockerfile.dev -t openlist-episode-rename:dev .
-docker run -it --rm --network host -v "$(pwd):/work" -w /work openlist-episode-rename:dev bash
+docker build -f Dockerfile.dev -t openlist-episode-renamer:dev .
+docker run -it --rm --network host -v "$(pwd):/work" -w /work openlist-episode-renamer:dev bash
 ```
 
 VS Code 可直接打开仓库的 `.devcontainer/` 配置进入开发容器（`--network host`，容器内直连宿主机 OpenList 并绑定 `127.0.0.1:8000`）。

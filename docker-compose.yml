@@ -1,8 +1,8 @@
 services:
-  openlist-episode-rename:
+  openlist-episode-renamer:
     build: .
-    image: openlist-episode-rename:latest
-    container_name: openlist-episode-rename
+    image: openlist-episode-renamer:latest
+    container_name: openlist-episode-renamer
     ports:
       - "8000:8000"
     environment:
