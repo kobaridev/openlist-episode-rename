@@ -1,0 +1,22 @@
+// 使用本地已构建的开发镜像；若镜像不存在会先按 Dockerfile.dev 构建
+{
+  "name": "openlist-episode-rename-dev",
+  "image": "openlist-er-dev:latest",
+  "dockerFile": "Dockerfile.dev",
+  "context": "${workspaceFolder}",
+  "containerEnv": {},
+  "workspaceFolder": "/work",
+  // --network host：容器与宿主机同网段，可直接访问宿主机 OpenList(5244)，Web 服务直接绑定 127.0.0.1:8000
+  "runArgs": ["--network", "host"],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python"
+      ]
+    }
+  },
+  "forwardPorts": [8000],
+  "portsAttributes": {
+    "8000": { "label": "Web UI", "onPortForward": "notify" }
+  }
+}
