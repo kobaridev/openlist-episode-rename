@@ -1,4 +1,4 @@
-#file:/Volumes/DATA/Code/Pycharm/Episode_Rename/.github/workflows/auto-tag-release.yml
+# GitHub Actions 发布流水线：自动打标签、三平台多架构构建可执行文件并发布 Release
 name: Auto Generate Tag and Release
 
 on:
@@ -14,6 +14,7 @@ jobs:
       should_create_tag: ${{ steps.version_check.outputs.should_create_tag }}
       new_version: ${{ steps.version_check.outputs.new_version }}
       commit_hash: ${{ steps.commit.outputs.hash }}
+      changelog: ${{ steps.changelog.outputs.changelog }}
 
     steps:
     - uses: actions/checkout@v4
@@ -70,6 +71,22 @@ jobs:
         COMMIT_HASH=$(git rev-parse --short HEAD)
         echo "hash=$COMMIT_HASH" >> $GITHUB_OUTPUT
 
+    - name: Generate changelog
+      id: changelog
+      run: |
+        LATEST_TAG="${{ steps.latest_tag.outputs.latest_tag }}"
+        if git rev-parse "$LATEST_TAG" >/dev/null 2>&1; then
+          CHANGES_LOG=$(git log --oneline --no-merges "$LATEST_TAG..HEAD" | sed 's/^/- /')
+        else
+          CHANGES_LOG=$(git log --oneline --no-merges HEAD | sed 's/^/- /')
+        fi
+        CHANGES_LOG=${CHANGES_LOG:-- 首次发布}
+        {
+          echo "changelog<<GHOUT"
+          printf '%s\n' "$CHANGES_LOG"
+          echo "GHOUT"
+        } >> "$GITHUB_OUTPUT"
+
   # 自动创建新标签
   create-tag:
     needs: check-changes
@@ -98,21 +115,41 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # 基于新标签构建可执行文件
+  # 三平台 多架构 构建可执行文件 + deb/AppImage/dmg
   build-executables:
     needs: create-tag
     if: needs.check-changes.outputs.should_create_tag == 'true'
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest, macos-15-intel]
         python-version: [3.12]
+        include:
+          - runner: ubuntu-latest
+            platform: linux
+            arch: amd64
+            appimage_arch: x86_64
+          - runner: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+            appimage_arch: aarch64
+          - runner: windows-latest
+            platform: windows
+            arch: amd64
+          - runner: windows-11-arm
+            platform: windows
+            arch: arm64
+          - runner: macos-latest
+            platform: macos
+            arch: arm64
+          - runner: macos-15-intel
+            platform: macos
+            arch: x64
 
     steps:
     - uses: actions/checkout@v4
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
 
@@ -123,21 +160,71 @@ jobs:
       shell: bash
 
     - name: Build (Linux/Mac)
-      if: matrix.os != 'windows-latest'
+      if: matrix.platform != 'windows'
       run: |
         pyinstaller --noconfirm openlist-episode-renamer.spec
       shell: bash
 
     - name: Build (Windows)
-      if: matrix.os == 'windows-latest'
+      if: matrix.platform == 'windows'
       run: |
         pyinstaller --noconfirm openlist-episode-renamer.spec
+      shell: pwsh
+
+    # ===== Linux：AppImage + deb =====
+    - name: Build AppImage (Linux)
+      if: matrix.platform == 'linux'
+      env:
+        APPIMAGE_ARCH: ${{ matrix.appimage_arch }}
+      run: |
+        set -euo pipefail
+        curl -sL "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-${APPIMAGE_ARCH}.AppImage" -o appimagetool
+        chmod +x appimagetool
+        mkdir -p AppDir/usr/bin
+        cp dist/openlist-episode-renamer AppDir/usr/bin/
+        cp LICENSE AppDir/ 2>/dev/null || true
+        printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=OpenList Episode Rename' 'Comment=OpenList TV-series batch rename tool' 'Exec=openlist-episode-renamer' 'Icon=openlist-episode-renamer' 'Terminal=true' 'Categories=Utility;' > AppDir/openlist-episode-renamer.desktop
+        cp packaging/icon.png AppDir/openlist-episode-renamer.png
+        printf '%s\n' '#!/bin/sh' 'SELF=$(readlink -f "$0")' 'HERE=${SELF%/*}' 'export PATH="$HERE/usr/bin:$PATH"' 'exec "$HERE/usr/bin/openlist-episode-renamer" "$@"' > AppDir/AppRun
+        chmod +x AppDir/AppRun
+        ARCH="${APPIMAGE_ARCH}" ./appimagetool --appimage-extract-and-run AppDir "dist/openlist-episode-renamer-linux-${APPIMAGE_ARCH}.AppImage"
+      shell: bash
+
+    - name: Build Linux .deb
+      if: matrix.platform == 'linux'
+      run: |
+        V=$(echo "${{ needs.check-changes.outputs.new_version }}" | sed 's/^v//')
+        bash scripts/build-deb.sh dist/openlist-episode-renamer "$V" dist "${{ matrix.arch }}"
+        rm -f dist/openlist-episode-renamer
+      shell: bash
+
+    # ===== macOS：dmg =====
+    - name: Build macOS .dmg
+      if: matrix.platform == 'macos'
+      run: |
+        mkdir -p /tmp/dmg
+        cp dist/openlist-episode-renamer /tmp/dmg/
+        cp LICENSE /tmp/dmg/ 2>/dev/null || true
+        printf 'OpenList Episode Rename %s (macOS %s)\n\nRun: ./openlist-episode-renamer\nThen open: http://127.0.0.1:8000\n' \
+          "${{ needs.check-changes.outputs.new_version }}" "${{ matrix.arch }}" > /tmp/dmg/README.txt
+        hdiutil create -volname "OpenList Episode Rename" -srcfolder /tmp/dmg -ov -format UDZO \
+          "dist/openlist-episode-renamer-macos-${{ matrix.arch }}.dmg"
+        rm -f dist/openlist-episode-renamer
+        ls -la dist/
+      shell: bash
+
+    # ===== Windows：改名 =====
+    - name: Rename Windows executable
+      if: matrix.platform == 'windows'
+      run: |
+        mv dist/openlist-episode-renamer.exe "dist/openlist-episode-renamer-windows-${{ matrix.arch }}.exe"
+        ls -la dist/
       shell: pwsh
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: openlist-episode-renamer-${{ matrix.os }}-${{ matrix.python-version }}
+        name: openlist-episode-renamer-${{ matrix.platform }}-${{ matrix.arch }}
         path: dist/
 
   # 创建 GitHub Release
@@ -162,15 +249,31 @@ jobs:
         find releases -type f -exec cp {} release_assets/ \;
         ls -la release_assets/
 
+    - name: Write release body
+      run: |
+        printf '%s\n' \
+          '## 更新内容' '' \
+          "${{ needs.check-changes.outputs.changelog }}" '' \
+          '## 平台与架构产物' \
+          '| 平台 | 架构 | 产物 |' \
+          '| --- | --- | --- |' \
+          '| Windows | amd64 / arm64 | `openlist-episode-renamer-windows-amd64.exe` / `openlist-episode-renamer-windows-arm64.exe` |' \
+          '| Linux | amd64 / arm64 | `openlist-episode-renamer-linux-x86_64.AppImage` / `openlist-episode-renamer-linux-aarch64.AppImage`（免安装）+ 对应 `.deb`（含 systemd 服务） |' \
+          '| macOS | x64 / arm64 | `openlist-episode-renamer-macos-x64.dmg` / `openlist-episode-renamer-macos-arm64.dmg` |' \
+          '' \
+          '普通用户直接下载对应平台的 AppImage / exe / dmg 运行即可；使用说明见仓库 README。' \
+          '' \
+          "- Commit: `${{ needs.check-changes.outputs.commit_hash }}`" \
+          > body.md
+        cat body.md
+      shell: bash
+
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ needs.check-changes.outputs.new_version }}
         name: Release ${{ needs.check-changes.outputs.new_version }}
-        body: |
-          Auto-generated release
-          - Commit: ${{ needs.check-changes.outputs.commit_hash }}
-          - Built on: $(date)
+        body_path: body.md
         files: release_assets/*
         draft: false
         prerelease: false
