@@ -6,8 +6,13 @@
   "context": "${workspaceFolder}",
   "containerEnv": {},
   "workspaceFolder": "/work",
-  // --network host：容器与宿主机同网段，可直接访问宿主机 OpenList(5244)，Web 服务直接绑定 127.0.0.1:8000
-  "runArgs": ["--network", "host"],
+  // 端口映射：把容器 8000 暴露到宿主机 http://127.0.0.1:8000；
+  // 不要用 --network host——Docker Desktop 下容器在独立虚拟机中，host 模式端口无法暴露给宿主机。
+  // host-gateway：让容器内可经 host.docker.internal 访问宿主机上的 OpenList（5244）。
+  "runArgs": [
+    "-p", "8000:8000",
+    "--add-host", "host.docker.internal:host-gateway"
+  ],
   "customizations": {
     "vscode": {
       "extensions": [

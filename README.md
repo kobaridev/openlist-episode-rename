@@ -138,12 +138,36 @@ docker build -t openlist-episode-renamer:latest .
 
 ### 开发容器
 
+端口映射、目录挂载与 `host.docker.internal` 已固化在 `docker-compose.dev.yml`，一键构建并启动开发环境：
+
 ```bash
-docker build -f Dockerfile.dev -t openlist-episode-renamer:dev .
-docker run -it --rm --network host -v "$(pwd):/work" -w /work openlist-episode-renamer:dev bash
+# 构建并启动开发容器（后台常驻，容器内自动运行 server.py）
+docker compose -f docker-compose.dev.yml up -d --build
+
+# 查看日志 / 进入容器 / 停止
+docker compose -f docker-compose.dev.yml logs -f
+docker compose -f docker-compose.dev.yml exec dev bash
+docker compose -f docker-compose.dev.yml down
 ```
 
-VS Code 可直接打开仓库的 `.devcontainer/` 配置进入开发容器（`--network host`，容器内直连宿主机 OpenList 并绑定 `127.0.0.1:8000`）。
+- 宿主机访问 Web UI：`http://127.0.0.1:8000`（端口映射 `8000:8000`，**不要用 `--network host`**——尤其在 Docker Desktop 下容器运行在独立虚拟机中，host 模式的端口不会暴露给宿主机）。
+- 登录 OpenList：
+  - **推荐**：`http://host.docker.internal:5244`（`extra_hosts` 已配置，指向宿主机）。只要 OpenList 把 5244 映射到宿主机，无论它的容器名/网络叫什么都能连上（OpenList 官方 compose 默认 `5244:5244`）。
+  - 快捷方式（可选）：若 OpenList 恰好是名为 `openlist`、网络为 `openlist_default` 的容器，也可用 `http://openlist:5244`。需先手动把开发容器接入该网络：`docker network connect openlist_default openlist-episode-renamer-dev`（本编排默认只依赖 `host.docker.internal`，不依赖具体容器名/网络）。
+  - 注意：容器内 `127.0.0.1:5244` 指向的是容器自身，并非宿主机。
+- 项目根目录挂载到容器 `/work`，修改代码即时生效。
+
+也可用等价的手动命令：
+
+```bash
+docker build -f Dockerfile.dev -t openlist-episode-renamer:dev .
+docker run -it --rm -p 8000:8000 \
+  --add-host host.docker.internal:host-gateway \
+  -v "$(pwd):/work" -w /work \
+  openlist-episode-renamer:dev bash
+```
+
+VS Code 可直接打开仓库的 `.devcontainer/` 配置进入开发容器（`.devcontainer/devcontainer.json` 已改为 `-p 8000:8000` 端口映射与 `host.docker.internal`，登录 OpenList 填 `http://host.docker.internal:5244`）。
 
 ## 使用说明
 

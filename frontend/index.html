@@ -120,7 +120,7 @@
         /* ---------- 登录页 ---------- */
         .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
         .login-card {
-            width: 420px; max-width: 100%; padding: 40px 36px 32px;
+            width: 520px; max-width: 100%; padding: 44px 44px 36px;
             text-align: center; position: relative; overflow: hidden;
         }
         .login-card::before {
@@ -128,24 +128,42 @@
             background: var(--accent-grad-2);
         }
         .login-logo {
-            width: 64px; height: 64px; margin: 6px auto 18px; border-radius: 20px;
+            width: 68px; height: 68px; margin: 6px auto 20px; border-radius: 20px;
             background: var(--accent-grad-2); display: flex; align-items: center; justify-content: center;
-            font-size: 30px; box-shadow: 0 8px 24px var(--glow-ico);
+            font-size: 32px; box-shadow: 0 8px 24px var(--glow-ico);
         }
-        .login-title { font-size: 26px; font-weight: 700; letter-spacing: 1px; }
-        .login-sub { font-size: 14px; color: var(--text-2); margin: 8px 0 26px; }
+        .login-title { font-size: 30px; font-weight: 800; letter-spacing: 1px; }
+        .login-sub { font-size: 16px; font-weight: 600; color: var(--text-2); margin: 10px 0 28px; }
         .login-card .el-form { text-align: left; }
-        .login-card .el-form-item { margin-bottom: 18px; }
+        .login-card .el-form-item { margin-bottom: 20px; }
         .login-card .el-input { width: 100%; }
-        .login-hint { font-size: 14px; color: var(--text-3); margin-top: 4px; line-height: 1.6; }
+        .login-card .el-form-item__label { font-size: 15px; font-weight: 600; }
+        .login-hint { font-size: 14px; color: var(--text-3); margin-top: 6px; line-height: 1.7; }
+        .url-helper { display: flex; flex-direction: column; gap: 8px; margin: -4px 0 18px; }
+        .url-row { display: flex; align-items: stretch; gap: 8px; }
+        .url-tag {
+            flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+            font-size: 13px; font-weight: 800; letter-spacing: .5px;
+            border-radius: 10px; padding: 3px 10px; color: #fff; width: 52px; height: 100%; min-height: 34px;
+        }
+        .url-tag.docker { background: linear-gradient(135deg, #4b8fe0, #6aa9ff); }
+        .url-tag.local { background: linear-gradient(135deg, #5ab58a, #7fd0a8); }
+        .url-val {
+            flex: 1; min-width: 0; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            border: 1px solid var(--border); background: var(--input-bg); color: var(--text-2);
+            border-radius: 10px; padding: 6px 12px; font-size: 14px; font-weight: 600; font-family: ui-monospace, monospace;
+            cursor: pointer; transition: all .18s;
+        }
+        .url-val:hover { border-color: var(--accent); color: var(--accent); background: var(--tag-bg); }
+        .login-card .el-input__wrapper { border-radius: 10px; }
         .login-btn {
-            width: 100%; height: 46px; margin-top: 8px; border-radius: 12px; border: none;
-            background: var(--accent-grad); color: #fff; font-size: 16px; font-weight: 600;
-            cursor: pointer; transition: all .25s; letter-spacing: 2px;
+            width: 100%; height: 50px; margin-top: 10px; border-radius: 13px; border: none;
+            background: var(--accent-grad); color: #fff; font-size: 17px; font-weight: 700;
+            cursor: pointer; transition: all .25s; letter-spacing: 3px;
         }
         .login-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px var(--glow-btn-h); }
         .login-btn:disabled { opacity: .6; cursor: not-allowed; transform: none; }
-        .login-error { margin-top: 14px; font-size: 14px; color: var(--err); min-height: 18px; }
+        .login-error { margin-top: 14px; font-size: 15px; font-weight: 600; color: var(--err); min-height: 20px; }
 
         /* ---------- 主布局 ---------- */
         .main-layout { display: flex; min-height: 100vh; gap: 18px; padding: 18px; }
@@ -338,6 +356,9 @@
             .main-layout { flex-direction: column; }
             .sidebar { width: 100%; max-height: 300px; position: static; }
         }
+        @media (max-width: 480px) {
+            .login-card { padding: 32px 22px 28px; }
+        }
     </style>
 </head>
 <body>
@@ -352,6 +373,20 @@
                 <el-form-item label="OpenList 地址">
                     <el-input v-model="loginForm.base_url" placeholder="http://127.0.0.1:5244" clearable></el-input>
                 </el-form-item>
+                <div class="url-helper">
+                    <div class="url-row">
+                        <span class="url-tag docker">Docker</span>
+                        <button type="button" class="url-val" @click="loginForm.base_url = 'http://host.docker.internal:5244'">
+                            http://host.docker.internal:5244
+                        </button>
+                    </div>
+                    <div class="url-row">
+                        <span class="url-tag local">本地</span>
+                        <button type="button" class="url-val" @click="loginForm.base_url = 'http://127.0.0.1:5244'">
+                            http://127.0.0.1:5244
+                        </button>
+                    </div>
+                </div>
                 <el-form-item label="用户名">
                     <el-input v-model="loginForm.username" placeholder="用户名" clearable @keyup.enter="doLogin"></el-input>
                 </el-form-item>
@@ -362,7 +397,7 @@
                     {{ loggingIn ? '连接中…' : '连 接' }}
                 </button>
                 <div class="login-error">{{ loginError }}</div>
-                <div class="login-hint">凭据仅保存在本机浏览器（localStorage）。首次使用请先配置 OpenList 访问令牌。</div>
+                <div class="login-hint">仅需 OpenList 的账号与密码即可连接，无需额外配置令牌。凭据只保存在本机浏览器（localStorage）。<br><b>若 OpenList 也跑在 Docker 里</b>，请用 <b>http://host.docker.internal:5244</b>（容器名无关）。</div>
             </el-form>
         </div>
     </div>
