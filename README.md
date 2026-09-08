@@ -61,7 +61,7 @@ python server.py
 
 ## Docker 部署
 
-项目自带生产镜像 `Dockerfile` 与编排文件，一键部署：
+项目自带多阶段生产镜像 `Dockerfile` 与编排文件：
 
 ```bash
 # 构建并启动（后台运行，容器名 openlist-episode-rename）
@@ -70,15 +70,28 @@ docker compose up -d --build
 # 查看日志 / 停止
 docker compose logs -f
 docker compose down
-
-# 等价方式：仅用 Docker 构建并运行
-docker build -t openlist-episode-rename .
-docker run -d --name openlist-episode-rename -p 8000:8000 openlist-episode-rename
 ```
 
 - 浏览器访问 `http://127.0.0.1:8000`；
-- 设置与登录令牌通过命名卷 `ep-data` 持久化（容器内 `/data`），日志中可见路径；
-- 容器默认使用网络桥接，登录页的 OpenList 地址若在宿主机上，请填 `http://host.docker.internal:5244`（默认端口 5244）；若与 OpenList 同机同网段，也可改用 `network_mode: host`。
+- 设置与登录令牌通过命名卷 `ep-data` 持久化（容器内 `/data`）；
+- 容器默认使用网络桥接，登录页的 OpenList 地址若在宿主机上，请填 `http://host.docker.internal:5244`（默认端口 5244）。
+
+> 若宿主机 8000 端口被占用（例如本机已在跑 8000 的 Web 服务），可改 `docker-compose.yml` 的端口映射，如 `"8001:8000"`；
+> 若与 OpenList 同机同网段且走 host 网络更顺，可把 compose 中的映射改回 `network_mode: host`（此时服务直绑宿主机 8000）。
+
+### 依赖层「openlist-episode-rename:base」复用（离线构建）
+
+pip 首次下载依赖卡在 `pip install 4/6`？`Dockerfile` 分两阶段，把「装好依赖」做成独立镜像层，构建一次永久复用，之后改代码只 COPY 本地文件、完全离线秒级完成：
+
+```bash
+# 1. 构建依赖层（默认走清华镜像源，约 30 秒；也可换阿里云或官方源）
+docker build --target deps -t openlist-episode-rename:base .
+#    docker build --target deps --build-arg PIP_INDEX=https://mirrors.aliyun.com/pypi/simple -t openlist-episode-rename:base .
+#    docker build --target deps --build-arg PIP_INDEX=https://pypi.org/simple  -t openlist-episode-rename:base .
+
+# 2. 之后任何一次应用构建都在 base 上直接 COPY 仓库文件，不再联网
+docker build -t openlist-episode-rename:latest .
+```
 
 ### 开发容器
 
