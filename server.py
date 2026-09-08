@@ -312,10 +312,22 @@ if __name__ == "__main__":
     import uvicorn
     host = sys.argv[1] if len(sys.argv) > 1 else "127.0.0.1"
     port = int(sys.argv[2]) if len(sys.argv) > 2 else 8000
+    browser_url = f"http://127.0.0.1:{port}/"
     print("=" * 50)
     print("OpenList 交互式剧集重命名工具 (Web 服务)")
     print("=" * 50)
-    print(f"请打开浏览器访问: http://{host}:{port}/")
+    print(f"浏览器访问: {browser_url}")
     print(f"API 文档: http://{host}:{port}/docs")
     print("=" * 50)
+    auto_open = getattr(sys, "frozen", False) or os.environ.get("EPISODE_OPEN_BROWSER", "").lower() in ("1", "true", "yes")
+    if auto_open:
+        import threading, time, webbrowser
+        def open_browser():
+            time.sleep(1.2)
+            try:
+                webbrowser.open(browser_url)
+                print(f"已自动打开浏览器: {browser_url}")
+            except Exception:
+                pass
+        threading.Thread(target=open_browser, daemon=True).start()
     uvicorn.run(app, host=host, port=port)

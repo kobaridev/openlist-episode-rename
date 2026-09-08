@@ -335,6 +335,15 @@
         }
         .param-x { cursor: pointer; opacity: .7; margin-left: 5px; font-size: 13px; font-weight: 400; }
         .param-x:hover { opacity: 1; }
+        .param-presets { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .param-presets-label { font-size: 13px; color: var(--text-3); white-space: nowrap; }
+        .preset-chip {
+            display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 8px;
+            border: 1px dashed var(--border-strong); background: var(--input-bg); color: var(--text-2);
+            font-size: 14px; cursor: pointer; white-space: nowrap; transition: all .15s; user-select: none;
+        }
+        .preset-chip:hover { border-color: var(--accent); color: var(--accent); }
+        .preset-chip.active { background: var(--tag-bg); border: 1px solid var(--accent); color: var(--accent); }
         .el-input-number .el-input-number__decrease,
         .el-input-number .el-input-number__increase {
             background: transparent; color: var(--text-2); border: none;
@@ -526,6 +535,11 @@
                     <span class="muted" style="margin-left:auto">长文件名自动换行完整展示</span>
                 </div>
                 <div class="tag-bar">
+                    <div class="param-presets">
+                        <span class="param-presets-label">常用:</span>
+                        <span v-for="pr in mediaPresets" :key="pr" class="preset-chip"
+                              :class="{ active: mediaParams.includes(pr) }" @click="togglePreset(pr)">{{ pr }}</span>
+                    </div>
                     <div class="param-input">
                         <span v-for="(p,i) in mediaParams" :key="p + '-' + i" class="param-chip">
                             {{ p }}<b class="param-x" title="移除" @click="mediaParams.splice(i,1)">✕</b>
@@ -667,6 +681,12 @@ createApp({
         const settings = reactive({ tmdb_api_key:'', delimiter:'.', use_episode_title:true, default_season:'1', default_episode_start:'1', theme:'light' });
         const mediaParams = ref([]);
         const paramDraft = ref('');
+        const mediaPresets = ['1080p', '4K', 'HDR', 'HDR10', 'DV', 'DTS-HD', '中英字幕'];
+        function togglePreset(pr) {
+            const i = mediaParams.value.indexOf(pr);
+            if (i >= 0) mediaParams.value.splice(i, 1);
+            else mediaParams.value.push(pr);
+        }
         async function addParam() {
             const v = paramDraft.value.trim();
             if (!v) return;
@@ -1066,7 +1086,8 @@ createApp({
             crumbs, mediaExt, previewName, humanSize,
             doLogin, logout, reload, buildRows, openDir, navigateTo, goUp, scrollToFile,
             renameDir, commitDirRename, cancelDirRename, commitRename,
-            normalizeNum, fillFromSelection, addParam, backspaceParam, applyTags, applyEpisodeNumbers,
+            normalizeNum, fillFromSelection, addParam, backspaceParam, togglePreset,
+            mediaPresets, applyTags, applyEpisodeNumbers,
             tmdbSearch, tmdbFetch, openSettings, saveSettings, toggleTheme, checkHealth,
             Search
         };
