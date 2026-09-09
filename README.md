@@ -105,7 +105,7 @@ tar -zxf openlist-episode-renamer-macos-arm64.tar.gz    # Intel 用 -x64.tar.gz
 
 **Homebrew 安装**
 
-macOS 命令行用户可直接用 Homebrew Tap 安装（自动选择 arm64；Intel 机型在安装后把公式内 `url` 的 `arm64` 改为 `x64` 重新安装）。
+macOS 命令行用户可直接安装 tap 中的公式（当前公式使用已发布并固定 SHA-256 校验值的 arm64 产物）：
 
 > **Homebrew 6.0+ 注意**：非官方 Tap 默认不加载（Tap Trust 机制），需先信任。推荐只信任单个 Formula（而非整个 Tap）：
 
@@ -121,7 +121,14 @@ brew install openlist-episode-renamer
 brew install kobaridev/openlist-episode-renamer/openlist-episode-renamer
 ```
 
+Intel 机型请使用 release 页面中的 x64 tar.gz，或在 tap 中将公式 URL 的 `arm64` 改为 `x64` 后再安装。
+
 安装完成后运行 `openlist-episode-renamer` 即可，浏览器会自动打开 `http://127.0.0.1:8000`。
+
+每次主仓库创建 Release 后，GitHub Actions 会自动计算 macOS arm64 产物的 SHA-256
+并更新 [Homebrew tap](https://github.com/kobaridev/homebrew-openlist-episode-renamer)。
+启用该同步任务需要在主仓库添加名为 `HOMEBREW_TAP_TOKEN` 的 Secret，
+其令牌需拥有该 tap 仓库的写入权限。
 
 ## Docker 部署
 
