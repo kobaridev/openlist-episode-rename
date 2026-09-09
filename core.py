@@ -8,6 +8,12 @@ import configparser
 import platform
 
 
+def clean_series_name(name: str) -> str:
+    """移除剧名中的括号及其内容，避免将地区等附加信息带入文件名。"""
+    cleaned = re.sub(r"\s*[（(][^（）()]*[）)]", "", name or "")
+    return cleaned.strip()
+
+
 class InteractiveEpisodeRenamer:
     def __init__(self, base_url: str, username: str, password: str):
         """
@@ -81,7 +87,7 @@ class InteractiveEpisodeRenamer:
     # ==================== 用户设置（JSON 持久化） ====================
 
     DEFAULT_SETTINGS = {
-        "tmdb_api_key": "",
+        "tmdb_api_key": "08a6bef260044f70c150251c79f2e476",
         "delimiter": ".",
         "use_episode_title": True,
         "default_season": "1",
@@ -116,7 +122,7 @@ class InteractiveEpisodeRenamer:
             print(f"保存设置失败: {e}")
         return self.settings
 
-    # ==================== TMDB API（配置了 Key 时使用，否则回退网页抓取） ====================
+    # ==================== TMDB API（网页抓取兜底由 server.py 处理） ====================
 
     def tmdb_api_search(self, keyword: str, api_key: str) -> List[Dict]:
         """通过 TMDB REST API 搜索剧集"""
@@ -129,7 +135,7 @@ class InteractiveEpisodeRenamer:
         results = res.json().get("results", [])
         return [{
             "id": r.get("id"),
-            "name": r.get("name", ""),
+            "name": clean_series_name(r.get("name", "")),
             "overview": (r.get("overview") or "")[:120],
             "year": r.get("first_air_date", "")[:4] if r.get("first_air_date") else "",
             "poster": (f"https://image.tmdb.org/t/p/w185{r['poster_path']}" if r.get("poster_path") else ""),
@@ -483,4 +489,3 @@ class InteractiveEpisodeRenamer:
         except Exception as e:
             print(f"生成标准名称时出错: {e}")
             return episode_info.get('title', 'Unknown')
-

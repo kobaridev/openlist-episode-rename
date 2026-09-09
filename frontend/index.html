@@ -364,14 +364,6 @@
         .footer-bar { display: flex; align-items: center; gap: 14px; padding: 14px 20px; }
         .footer-info { flex: 1; font-size: 15px; color: var(--text-2); }
 
-        /* ---------- 设置抽屉 ---------- */
-        .set-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 0; border-bottom: 1px solid var(--border); }
-        .set-row:last-child { border-bottom: none; }
-        .set-label { font-size: 15px; font-weight: 600; }
-        .set-desc { font-size: 14px; color: var(--text-3); margin-top: 3px; line-height: 1.5; }
-        .set-row .el-input { width: 220px; }
-        .set-row .el-input-number { width: 130px; }
-
         .empty-wrap { text-align: center; padding: 60px 0; color: var(--text-3); font-size: 15px; }
         .table-wrap { max-height: calc(100vh - 250px); overflow: auto; border-radius: 12px; }
         @media (max-width: 980px) {
@@ -486,7 +478,6 @@
                 <button class="btn-icon" @click="toggleTheme" :title="settings.theme === 'dark' ? '切换为浅色' : '切换为深色'">
                     {{ settings.theme === 'dark' ? '☀️' : '🌙' }}
                 </button>
-                <button class="btn-icon" @click="openSettings" title="设置">⚙️</button>
                 <button class="btn-ghost" @click="logout" title="断开连接">退出</button>
             </div>
 
@@ -517,6 +508,9 @@
                             <el-input-number :controls="false" v-model="epStart" :min="1" :max="999" size="default" style="width:110px"></el-input-number>
                         </span>
                         <button class="btn-ghost" @click="applyEpisodeNumbers">应用</button>
+                        <span class="tool-item"><span class="tool-label">分隔符</span>
+                            <el-input v-model="settings.delimiter" @change="saveDelimiter" style="width:90px" maxlength="4"></el-input>
+                        </span>
                     </div>
                     <div v-if="tmdb.results.length" class="tmdb-results">
                         <div v-for="r in tmdb.results" :key="r.id" class="tmdb-card"
@@ -612,36 +606,6 @@
         </main>
     </div>
 
-    <!-- ============ 设置抽屉（T4） ============ -->
-    <el-drawer v-model="settingsOpen" :title="null" size="420px" direction="rtl" :with-header="true">
-        <template #header>
-            <div class="panel-title"><span class="ico">⚙️</span>设置</div>
-        </template>
-        <div style="padding: 4px 24px">
-            <div class="set-row">
-                <div>
-                    <div class="set-label">TMDB API Key</div>
-                    <div class="set-desc">配置后优先使用 TMDB REST API（更稳定）；留空则回退到网页抓取</div>
-                </div>
-            </div>
-            <el-input v-model="setForm.tmdb_api_key" placeholder="粘贴 API Key（v3）" show-password style="margin-bottom:14px"></el-input>
-            <div class="set-row">
-                <div>
-                    <div class="set-label">分隔符</div>
-                    <div class="set-desc">文件名各段之间的分隔字符，例如 . 或 -</div>
-                </div>
-                <el-input v-model="setForm.delimiter" style="width:90px" maxlength="4"></el-input>
-            </div>
-            <div class="set-desc" style="margin-top:14px; line-height:1.7">
-                其余选项（季数、起始集号、是否含集名、主题）已在主界面工具栏直接提供，无需在此设置。
-            </div>
-            <div class="actions" style="margin-top:22px">
-                <button class="btn-main" style="flex:1; justify-content:center" :disabled="savingSet" @click="saveSettings">
-                    {{ savingSet ? '保存中…' : '保 存 设 置' }}
-                </button>
-            </div>
-        </div>
-    </el-drawer>
 </div>
 <script>
 const { createApp, ref, reactive, computed, onMounted, watch } = Vue;
@@ -718,10 +682,6 @@ createApp({
             keyword:'', season:1, results:[], selected:null,
             searching:false, fetching:false, episodes:{}, epCount:0, source:''
         });
-
-        const settingsOpen = ref(false);
-        const savingSet = ref(false);
-        const setForm = reactive({ tmdb_api_key:'', delimiter:'.' });
 
         const renamingDir = ref(false);
         const newDirName = ref('');
@@ -1055,24 +1015,12 @@ createApp({
         }
 
         // ---------- 设置 ----------
-        function openSettings() {
-            Object.assign(setForm, { tmdb_api_key: settings.tmdb_api_key || '', delimiter: settings.delimiter || '.' });
-            settingsOpen.value = true;
-        }
-        async function saveSettings() {
-            savingSet.value = true;
+        async function saveDelimiter(value) {
             try {
-                const body = {
-                    tmdb_api_key: setForm.tmdb_api_key,
-                    delimiter: setForm.delimiter || '.'
-                };
-                const res = await axios.post('/api/config', body);
-                Object.assign(settings, res.data.settings || body);
-                settingsOpen.value = false;
-                ElMessage.success('设置已保存');
+                await axios.post('/api/config', { delimiter: value || '.' });
             } catch (e) {
-                ElMessage.error('保存设置失败：' + (e.response?.data?.detail || e.message));
-            } finally { savingSet.value = false; }
+                ElMessage.error('分隔符保存失败：' + (e.response?.data?.detail || e.message));
+            }
         }
         async function loadConfig() {
             try {
@@ -1122,14 +1070,14 @@ createApp({
         return {
             loggedIn, loading, committing, currentPath, directories, files, rows, health, settings,
             mediaParams, paramDraft, epStart, useTitle, sidebarCol, toolsOpen, loginForm, loggingIn, loginError, tmdb,
-            settingsOpen, savingSet, setForm, renamingDir, newDirName,
+            renamingDir, newDirName,
             dirName, rowsCount, renameableCount, crumbPath,
             crumbs, mediaExt, previewName, humanSize,
             doLogin, autoHttps, logout, reload, buildRows, openDir, navigateTo, goUp, scrollToFile,
             renameDir, commitDirRename, cancelDirRename, commitRename,
             normalizeNum, fillFromSelection, addParam, backspaceParam, togglePreset,
             mediaPresets, applyTags, applyEpisodeNumbers,
-            tmdbSearch, tmdbFetch, openSettings, saveSettings, toggleTheme, checkHealth,
+            tmdbSearch, tmdbFetch, saveDelimiter, toggleTheme, checkHealth,
             Search
         };
     }

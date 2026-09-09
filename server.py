@@ -15,8 +15,7 @@ from typing import Dict, List, Any
 import re
 import requests
 
-from core import InteractiveEpisodeRenamer
-
+from core import InteractiveEpisodeRenamer, clean_series_name
 # 前端目录
 FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'frontend')
 
@@ -152,7 +151,7 @@ def _tmdb_headers():
 
 @app.post("/api/tmdb_search")
 def api_tmdb_search(req: dict):
-    """搜索 TMDB 剧集。配置了 API Key 走 REST API，否则网页抓取。"""
+    """搜索 TMDB 剧集，优先使用 REST API，无 Key 时网页抓取兜底。"""
     keyword = req.get("keyword", "").strip()
     if not keyword:
         return JSONResponse({"error": "缺少 keyword"}, status_code=400)
@@ -161,9 +160,8 @@ def api_tmdb_search(req: dict):
         try:
             results = renamer.tmdb_api_search(keyword, api_key)
             return {"results": results, "source": "api"}
-        except Exception as e:
-            return JSONResponse({"error": f"TMDB API 调用失败: {e}"}, status_code=502)
-    # 网页抓取兜底
+        except Exception:
+            pass
     try:
         from bs4 import BeautifulSoup
         res = requests.get(
@@ -172,18 +170,15 @@ def api_tmdb_search(req: dict):
             headers=_tmdb_headers(), timeout=15,
         )
         res.raise_for_status()
-        soup = BeautifulSoup(res.text, 'html.parser')
+        soup = BeautifulSoup(res.text, "html.parser")
         results = []
         seen = set()
         for card in soup.select('div[class*="media-card"]'):
             link = card.select_one('a[href^="/tv/"]')
             if not link:
                 continue
-            href = link.get("href", "")
-            m = href.split("/tv/")[-1].split("?")[0]
-            if not m:
-                continue
-            tmdb_id = m.split("-")[0]
+            match = link.get("href", "").split("/tv/")[-1].split("?")[0]
+            tmdb_id = match.split("-")[0]
             if not tmdb_id.isdigit() or tmdb_id in seen:
                 continue
             title_el = card.select_one("h2")
@@ -191,69 +186,62 @@ def api_tmdb_search(req: dict):
             if not title:
                 img = card.select_one("img[alt]")
                 title = img.get("alt", "") if img else ""
-            poster = ""
             img_el = card.select_one("img[src], img[data-src]")
+            poster = ""
             if img_el:
-                src = img_el.get("src") or img_el.get("data-src") or ""
-                if src.startswith("//"):
-                    src = "https:" + src
-                poster = src
+                poster = img_el.get("src") or img_el.get("data-src") or ""
+                if poster.startswith("//"):
+                    poster = "https:" + poster
             overview_el = card.select_one("p")
             overview = overview_el.get_text(strip=True)[:120] if overview_el else ""
             year_el = card.select_one("span.release_date")
-            year = ""
-            if year_el:
-                m = re.search(r"(19|20)\d{2}", year_el.get_text())
-                year = m.group(0) if m else ""
+            year_match = re.search(r"(19|20)\d{2}", year_el.get_text() if year_el else "")
             seen.add(tmdb_id)
-            results.append({"id": int(tmdb_id), "name": title, "overview": overview, "year": year, "poster": poster})
-            if len(seen) >= 10:
+            results.append({
+                "id": int(tmdb_id),
+                "name": clean_series_name(title),
+                "overview": overview,
+                "year": year_match.group(0) if year_match else "",
+                "poster": poster,
+            })
+            if len(results) >= 10:
                 break
         return {"results": results, "source": "scrape"}
     except Exception as e:
+        if api_key:
+            return JSONResponse({"error": f"TMDB API 与网页抓取均失败: {e}"}, status_code=502)
         return JSONResponse({"error": f"TMDB 搜索失败: {e}"}, status_code=502)
 
 @app.post("/api/tmdb_fetch")
 def api_tmdb_fetch(req: dict):
-    """获取季的分集名称。
-    方式 1（API）: {"series_id": 1396, "season": 1}  —— 需要 tmdb_api_key
-    方式 2（抓取）: {"url": "www.themoviedb.org/tv/1396/season/1"} —— 网页抓取兜底
-    """
+    """获取指定季的分集名称，优先使用 REST API，无 Key 时网页抓取兜底。"""
     api_key = (renamer.settings.get("tmdb_api_key", "") if renamer else "").strip()
     series_id = req.get("series_id")
     season = req.get("season")
-    if series_id and season is not None:
-        if api_key:
-            try:
-                episodes = renamer.tmdb_api_season(int(series_id), int(season), api_key)
-                return {"episodes": episodes, "source": "api"}
-            except Exception as e:
-                return JSONResponse({"error": f"TMDB API 调用失败: {e}"}, status_code=502)
-        # 无 API Key：自动构造 Season 页面 URL 走网页抓取兜底
-        url = f"https://www.themoviedb.org/tv/{int(series_id)}/season/{int(season)}?language=zh-CN"
-    else:
-        url = req.get("url", "").strip()
-        if not url:
-            return JSONResponse({"error": "缺少 series_id/season 或 url"}, status_code=400)
+    if not series_id or season is None:
+        return JSONResponse({"error": "缺少 series_id/season"}, status_code=400)
+    if api_key:
+        try:
+            episodes = renamer.tmdb_api_season(int(series_id), int(season), api_key)
+            return {"episodes": episodes, "source": "api"}
+        except Exception:
+            pass
     try:
-        if url.startswith("http"):
-            url_full = url
-        elif url.startswith("www."):
-            url_full = "https://" + url
-        else:
-            url_full = "https://www.themoviedb.org/" + url.lstrip("/")
-        res = requests.get(url_full, headers=_tmdb_headers(), timeout=15)
+        url = f"https://www.themoviedb.org/tv/{int(series_id)}/season/{int(season)}?language=zh-CN"
+        res = requests.get(url, headers=_tmdb_headers(), timeout=15)
         res.raise_for_status()
         from bs4 import BeautifulSoup
-        soup = BeautifulSoup(res.text, 'html.parser')
+        soup = BeautifulSoup(res.text, "html.parser")
         episodes = {}
-        for card in soup.select('.episode_list .card'):
-            num_el = card.select_one('.episode_number')
-            name_el = card.select_one('.episode_title h3 a')
+        for card in soup.select(".episode_list .card"):
+            num_el = card.select_one(".episode_number")
+            name_el = card.select_one(".episode_title h3 a")
             if num_el and name_el:
                 episodes[num_el.get_text(strip=True)] = name_el.get_text(strip=True)
         return {"episodes": episodes, "source": "scrape"}
     except Exception as e:
+        if api_key:
+            return JSONResponse({"error": f"TMDB API 与网页抓取均失败: {e}"}, status_code=502)
         return JSONResponse({"error": f"TMDB 抓取失败: {e}"}, status_code=502)
 
 
