@@ -1,9 +1,11 @@
 # Homebrew formula：OpenList 剧集批量重命名工具（macOS）
 #
-# 安装（Release 资产 openlist-episode-renamer-macos-arm64.tar.gz）：
-#   brew install https://raw.githubusercontent.com/kobaridev/openlist-episode-renamer/main/Formula/openlist-episode-renamer.rb
-# 或本地安装：
-#   brew install ./Formula/openlist-episode-renamer.rb
+# 该文件是 kobaridev/homebrew-openlist-episode-renamer tap 的来源，改动后同步推送：
+#   https://github.com/kobaridev/homebrew-openlist-episode-renamer
+#
+# 安装：
+#   brew tap kobaridev/openlist-episode-renamer
+#   brew install openlist-episode-renamer
 #
 # Intel (x64) 机型：请将下方 url 中 arm64 改为 x64。
 # 每次发版后需把 url 的 release tag 更新到最新版本。
