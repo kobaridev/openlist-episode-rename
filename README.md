@@ -122,6 +122,11 @@ Intel 机型请使用 release 页面中的 x64 tar.gz，或在 tap 中将公式 
 
 安装完成后运行 `openlist-episode-renamer` 即可，浏览器会自动打开 `http://127.0.0.1:8000`。
 
+每次主仓库创建 Release 后，GitHub Actions 会自动计算 macOS arm64 产物的 SHA-256
+并更新 [Homebrew tap](https://github.com/kobaridev/homebrew-openlist-episode-renamer)。
+启用该同步任务需要在主仓库添加名为 `HOMEBREW_TAP_TOKEN` 的 Secret，
+其令牌需拥有该 tap 仓库的写入权限。
+
 ## Docker 部署
 
 项目自带多阶段生产镜像 `Dockerfile` 与编排文件：
