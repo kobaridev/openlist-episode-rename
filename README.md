@@ -105,11 +105,20 @@ tar -zxf openlist-episode-renamer-macos-arm64.tar.gz    # Intel 用 -x64.tar.gz
 
 **Homebrew 安装**
 
-macOS 命令行用户可直接用 Homebrew Tap 安装（自动选择 arm64；Intel 机型在安装后把公式内 `url` 的 `arm64` 改为 `x64` 重新安装）：
+macOS 命令行用户可直接用 Homebrew Tap 安装（自动选择 arm64；Intel 机型在安装后把公式内 `url` 的 `arm64` 改为 `x64` 重新安装）。
+
+> **Homebrew 6.0+ 注意**：非官方 Tap 默认不加载（Tap Trust 机制），需先信任。推荐只信任单个 Formula（而非整个 Tap）：
 
 ```bash
 brew tap kobaridev/openlist-episode-renamer
+brew trust --formula kobaridev/openlist-episode-renamer/openlist-episode-renamer
 brew install openlist-episode-renamer
+```
+
+或用完整限定名一步安装（等价于自动信任该 Formula，无需单独 `tap`/`trust`）：
+
+```bash
+brew install kobaridev/openlist-episode-renamer/openlist-episode-renamer
 ```
 
 安装完成后运行 `openlist-episode-renamer` 即可，浏览器会自动打开 `http://127.0.0.1:8000`。
