@@ -23,6 +23,7 @@ openlist-episode-renamer/
 ├── requirements.txt            # Python 依赖清单
 ├── .devcontainer/              # VS Code Dev Container 配置
 ├── openlist-episode-renamer.spec# PyInstaller 打包配置
+├── Formula/                    # Homebrew formula（macOS 安装）
 ├── image/                       # README 预览图
 ├── USERPROFILE/                 # 本地配置/令牌示例（episode_renamer.conf、token）
 ├── .gitignore
@@ -92,15 +93,25 @@ sudo systemctl enable --now openlist-episode-renamer         # 开机自启并�
 # 日志: journalctl -u openlist-episode-renamer -f
 ```
 
-### macOS（DMG）
+### macOS（tar.gz，支持 Homebrew）
 
 ```bash
-hdiutil attach openlist-episode-renamer-macos-arm64.dmg     # Intel 用 -x64.dmg
-# 将 openlist-episode-renamer 拷出后运行：
+tar -zxf openlist-episode-renamer-macos-arm64.tar.gz    # Intel 用 -x64.tar.gz
 ./openlist-episode-renamer
 # 首次被 Gatekeeper 拦截：右键 → 打开；或:
 #   xattr -d com.apple.quarantine ./openlist-episode-renamer
+# 也推荐放入 PATH：sudo mv openlist-episode-renamer /usr/local/bin/
 ```
+
+**Homebrew 安装**
+
+macOS 命令行用户可直接用 Homebrew 安装本仓库的 formula（以最新 release 的 arm64 资产为准；Intel 机型请把 formula 内 `url` 的 `arm64` 改为 `x64`）：
+
+```bash
+brew install https://raw.githubusercontent.com/kobaridev/openlist-episode-renamer/main/Formula/openlist-episode-renamer.rb
+```
+
+安装完成后运行 `openlist-episode-renamer` 即可，浏览器会自动打开 `http://127.0.0.1:8000`。
 
 ## Docker 部署
 

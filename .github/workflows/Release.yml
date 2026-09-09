@@ -115,7 +115,7 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # 三平台 多架构 构建可执行文件 + deb/AppImage/dmg
+  # 三平台 多架构 构建可执行文件 + deb/AppImage/tar.gz
   build-executables:
     needs: [check-changes, create-tag]
     if: needs.check-changes.outputs.should_create_tag == 'true'
@@ -204,17 +204,17 @@ jobs:
         rm -f dist/openlist-episode-renamer
       shell: bash
 
-    # ===== macOS：dmg =====
-    - name: Build macOS .dmg
+    # ===== macOS：tar.gz（裸可执行文件，Homebrew formula 直接引用） =====
+    - name: Build macOS tar.gz
       if: matrix.platform == 'macos'
       run: |
-        mkdir -p /tmp/dmg
-        cp dist/openlist-episode-renamer /tmp/dmg/
-        cp LICENSE /tmp/dmg/ 2>/dev/null || true
+        mkdir -p /tmp/macpkg
+        cp dist/openlist-episode-renamer /tmp/macpkg/
+        cp LICENSE /tmp/macpkg/ 2>/dev/null || true
         printf 'OpenList Episode Rename %s (macOS %s)\n\nRun: ./openlist-episode-renamer\nThen open: http://127.0.0.1:8000\n' \
-          "${{ needs.check-changes.outputs.new_version }}" "${{ matrix.arch }}" > /tmp/dmg/README.txt
-        hdiutil create -volname "OpenList Episode Rename" -srcfolder /tmp/dmg -ov -format UDZO \
-          "dist/openlist-episode-renamer-macos-${{ matrix.arch }}.dmg"
+          "${{ needs.check-changes.outputs.new_version }}" "${{ matrix.arch }}" > /tmp/macpkg/README.txt
+        tar -czf "dist/openlist-episode-renamer-macos-${{ matrix.arch }}.tar.gz" \
+          -C /tmp/macpkg openlist-episode-renamer LICENSE README.txt
         rm -f dist/openlist-episode-renamer
         ls -la dist/
       shell: bash
@@ -265,9 +265,9 @@ jobs:
           '| --- | --- | --- |' \
           '| Windows | amd64 / arm64 | `openlist-episode-renamer-windows-amd64.exe` / `openlist-episode-renamer-windows-arm64.exe` |' \
           '| Linux | amd64 / arm64 | `openlist-episode-renamer-linux-x86_64.AppImage` / `openlist-episode-renamer-linux-aarch64.AppImage`（免安装）+ 对应 `.deb`（含 systemd 服务） |' \
-          '| macOS | x64 / arm64 | `openlist-episode-renamer-macos-x64.dmg` / `openlist-episode-renamer-macos-arm64.dmg` |' \
+          '| macOS | x64 / arm64 | `openlist-episode-renamer-macos-x64.tar.gz` / `openlist-episode-renamer-macos-arm64.tar.gz`（解压即用，支持 `brew install`） |' \
           '' \
-          '普通用户直接下载对应平台的 AppImage / exe / dmg 运行即可；使用说明见仓库 README。' \
+          '普通用户直接下载对应平台的 AppImage / exe / tar.gz 运行即可；使用说明见仓库 README。' \
           '' \
           "- Commit: `${{ needs.check-changes.outputs.commit_hash }}`" \
           > body.md
