@@ -12,7 +12,7 @@
 class OpenlistEpisodeRenamer < Formula
   desc "OpenList TV-series batch rename tool (Web UI, self-contained binary)"
   homepage "https://github.com/kobaridev/openlist-episode-renamer"
-  url "https://github.com/kobaridev/openlist-episode-renamer/releases/download/v0.0.9/openlist-episode-renamer-macos-arm64.tar.gz"
+  url "https://github.com/kobaridev/openlist-episode-renamer/releases/download/v0.0.14/openlist-episode-renamer-macos-arm64.tar.gz"
   # 发版后可固定校验值： shasum -a 256 <tar.gz>；暂用 :no_check 避免每次发版都要改 formula
   sha256 :no_check
 
